@@ -1,0 +1,13 @@
+{
+  "resource_urls": {
+    "mods": "https://example.com/gtnh-mods/mods.json",
+    "scripts": "https://example.com/gtnh-mods/scripts.json",
+    "configs": "https://example.com/gtnh-mods/configs.json"
+  },
+  "auto_backup": true,
+  "keep_backups": 10,
+  "last_path": "F:/Minecraft/mmc-develop-win32/MultiMC/instances/GTNH 2.7.0/.minecraft",
+  "last_version": "2.7.X",
+  "client_path": "F:/Minecraft/1.12.2mod服务器/.minecraft/versions/GT New Horizons 2.7.4test",
+  "server_path": ""
+}

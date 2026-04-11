@@ -1,0 +1,15 @@
+{
+  "mods": [
+    {
+      "id": "example-mod",
+      "name": "示例模组",
+      "filename": "example-mod.jar",
+      "description": "这是一个示例模组说明",
+      "server_required": true
+    }
+  ],
+  "scripts": [],
+  "configs": [],
+  "fonts": [],
+  "resourcepacks": []
+}

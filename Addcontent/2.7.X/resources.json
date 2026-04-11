@@ -1,0 +1,26 @@
+{
+  "mods": [
+    {
+      "id": "AE2-ae2thing",
+      "filename": "[AE2附属]ae2thing-v1.1.28.jar",
+      "name": "ae2thing",
+      "version": "1.1.28",
+      "mc_version": "2.7.4",
+      "description": "扩展了AE的一些功能，无限存储单元,可以不限种类的存储物品.流体 源质离散器,注魔接口,炼金接口(TC注魔炼金三件套) 鱼大和猫蛋蛋玩偶、比APU更好用的样板自动上传（自动搜索甚至不用点进上传）",
+      "server_required": true
+    },
+    {
+      "id": "123Technology",
+      "filename": "[123科技]123Technology-2.1.1.jar",
+      "name": "123Technology",
+      "version": "2.1.1",
+      "mc_version": "2.7.4",
+      "description": "为游戏添加了一系列来自社群或网络相关梗的机器，涵盖全游戏阶段，大多偏向整活性质，同时为游戏添加了max+内容。",
+      "server_required": true
+    }
+  ],
+  "scripts": [],
+  "configs": [],
+  "fonts": [],
+  "resourcepacks": []
+}
