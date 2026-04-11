@@ -3,7 +3,7 @@ Dialog windows for GTNH Mod Installer GUI
 """
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
-from typing import Optional, List, Dict, Tuple
+from typing import Optional
 
 
 class FolderSelectDialog:
@@ -18,98 +18,6 @@ class FolderSelectDialog:
             initialdir=initial_dir
         )
         return folder if folder else None
-
-
-class PresetDialog(tk.Toplevel):
-    """Dialog for saving/loading presets"""
-
-    def __init__(self, parent, title: str, presets: List[str], mode: str = 'save'):
-        """
-        Args:
-            parent: Parent window
-            title: Dialog title
-            presets: List of existing preset names
-            mode: 'save' or 'load'
-        """
-        super().__init__(parent)
-        self.title(title)
-        self.parent = parent
-        self.presets = presets
-        self.mode = mode
-        self.result: Optional[str] = None
-
-        self._create_widgets()
-        self._center_window()
-
-    def _create_widgets(self):
-        main_frame = ttk.Frame(self, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        if self.mode == 'save':
-            ttk.Label(main_frame, text="预设名称:").pack(anchor=tk.W)
-
-            self.name_var = tk.StringVar()
-            self.name_entry = ttk.Entry(main_frame, textvariable=self.name_var, width=30)
-            self.name_entry.pack(fill=tk.X, pady=5)
-            self.name_entry.focus_set()
-
-        else:  # load mode
-            ttk.Label(main_frame, text="选择预设:").pack(anchor=tk.W)
-
-            self.preset_list = tk.Listbox(main_frame, height=8)
-            self.preset_list.pack(fill=tk.BOTH, expand=True, pady=5)
-            for preset in self.presets:
-                self.preset_list.insert(tk.END, preset)
-
-            if self.presets:
-                self.preset_list.selection_set(0)
-
-            self.preset_list.bind('<Double-Button-1>', lambda e: self._on_confirm())
-
-        # Buttons
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=10)
-
-        ttk.Button(btn_frame, text="确定", command=self._on_confirm).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(btn_frame, text="取消", command=self._on_cancel).pack(side=tk.RIGHT)
-
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-
-    def _center_window(self):
-        self.transient(self.parent)
-        self.grab_set()
-        self.update_idletasks()
-        width = self.winfo_width()
-        height = self.winfo_height()
-        x = self.parent.winfo_x() + (self.parent.winfo_width() - width) // 2
-        y = self.parent.winfo_y() + (self.parent.winfo_height() - height) // 2
-        self.geometry(f"+{x}+{y}")
-        self.resizable(False, False)
-
-    def _on_confirm(self):
-        if self.mode == 'save':
-            name = self.name_var.get().strip()
-            if not name:
-                messagebox.showwarning("警告", "请输入预设名称", parent=self)
-                return
-            if name in self.presets:
-                if not messagebox.askyesno("确认", f"预设 '{name}' 已存在，是否覆盖？", parent=self):
-                    return
-            self.result = name
-        else:
-            selection = self.preset_list.curselection()
-            if not selection:
-                messagebox.showwarning("警告", "请选择一个预设", parent=self)
-                return
-            self.result = self.preset_list.get(selection[0])
-
-        self.grab_release()
-        self.destroy()
-
-    def _on_cancel(self):
-        self.result = None
-        self.grab_release()
-        self.destroy()
 
 
 class BackupDialog(tk.Toplevel):

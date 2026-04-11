@@ -2,7 +2,7 @@
 Minecraft directory operations for GTNH Mod Installer
 """
 import os
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 
 
 class MinecraftPath:
@@ -72,23 +72,3 @@ class MinecraftPath:
         except OSError:
             return False
 
-    def list_installed_mods(self) -> List[str]:
-        """List all installed mod jar files"""
-        mods_path = self.get_mods_path()
-        if not os.path.exists(mods_path):
-            return []
-        return [f for f in os.listdir(mods_path) if f.endswith('.jar')]
-
-    def list_installed_configs(self) -> List[str]:
-        """List all config files/directories"""
-        config_path = self.get_config_path()
-        if not os.path.exists(config_path):
-            return []
-        return os.listdir(config_path)
-
-    def list_installed_scripts(self) -> List[str]:
-        """List all script files"""
-        scripts_path = self.get_scripts_path()
-        if not os.path.exists(scripts_path):
-            return []
-        return [f for f in os.listdir(scripts_path) if f.endswith(('.zs', '.zsl', '.cfg'))]

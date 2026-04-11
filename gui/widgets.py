@@ -222,11 +222,6 @@ class ResourceListFrame(ttk.Frame):
         """Get list of selected resource IDs"""
         return [res_id for res_id, var in self.check_vars.items() if var.get()]
 
-    def set_selected_ids(self, ids: List[str]):
-        """Set which resources are selected"""
-        for res_id, var in self.check_vars.items():
-            var.set(res_id in ids)
-            self._update_tree_item(res_id)
 
 
 class LogFrame(ttk.Frame):

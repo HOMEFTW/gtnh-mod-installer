@@ -89,20 +89,3 @@ def init_external_content():
     return external_dir
 
 
-def get_data_dir() -> str:
-    """Get data directory"""
-    return os.path.join(get_app_dir(), 'data')
-
-
-def get_resources_dir() -> str:
-    """Get resources directory"""
-    return os.path.join(get_app_dir(), 'resources')
-
-
-def ensure_dir(path: str) -> bool:
-    """Ensure directory exists, create if not"""
-    try:
-        os.makedirs(path, exist_ok=True)
-        return True
-    except OSError:
-        return False

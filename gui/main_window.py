@@ -795,24 +795,6 @@ class MainWindow:
         # Refresh lists
         self._load_all_resources()
 
-    def _setup_drag_drop(self):
-        """Setup drag and drop support for .hflist files"""
-        # Register drop target (dummy functions for fallback)
-        self.root.drop_target_register = lambda *_args: None
-        self.root.dnd_bind = lambda *_args: None
-
-        try:
-            import tkinterdnd2  # noqa: F401
-            # If tkinterdnd2 is available, use it
-            self.root.drop_target_register('*')
-            self.root.dnd_bind('<<Drop>>', self._on_drop)
-        except ImportError:
-            # Fallback: use manual file drop handling on Windows
-            self.root.bind('<Configure>', self._check_clipboard_for_hflist)
-
-        # Alternative: bind to main frame for file drops
-        self.root.bind('<FocusIn>', self._on_focus_in)
-
     def _on_drop(self, event):
         """Handle file drop event"""
         # Get dropped files
@@ -827,17 +809,6 @@ class MainWindow:
             if file_path.lower().endswith('.hflist'):
                 self._load_install_list(file_path)
                 break
-
-    def _on_focus_in(self, _event):
-        """Check clipboard for .hflist file path when window gets focus"""
-        try:
-            clipboard = self.root.clipboard_get()
-            if clipboard.endswith('.hflist') and os.path.exists(clipboard):
-                # Clear clipboard to avoid repeated triggers
-                self.root.clipboard_clear()
-                self._load_install_list(clipboard)
-        except:
-            pass
 
     def _uninstall_selected(self):
         """Uninstall selected resources"""

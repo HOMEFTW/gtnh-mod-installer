@@ -6,7 +6,7 @@ import shutil
 import json
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
-from pathlib import Path
+
 
 from utils.logger import logger
 from utils.helpers import save_json, load_json
@@ -278,19 +278,6 @@ class BackupManager:
             logger.error(f"删除备份失败: {str(e)}")
             return False, f"删除备份失败: {str(e)}"
 
-    def get_backup_info(self, backup_id: str) -> Optional[Dict]:
-        """Get detailed info about a specific backup"""
-        meta = self._load_backup_meta()
-        for backup in meta.get("backups", []):
-            if backup["id"] == backup_id:
-                # Check if backup folder exists and add has_client/has_server flags
-                backup_path = os.path.join(self.backup_base, backup_id)
-                if os.path.exists(backup_path):
-                    backup["has_client"] = os.path.exists(os.path.join(backup_path, "client"))
-                    backup["has_server"] = os.path.exists(os.path.join(backup_path, "server"))
-                return backup
-        return None
-
     def _restore_empty_dirs(self, src_path: str, dst_path: str):
         """Ensure empty directories from backup source are restored to destination"""
         for dirpath, dirnames, filenames in os.walk(src_path):
@@ -308,32 +295,3 @@ class BackupManager:
             size_bytes /= 1024
         return f"{size_bytes:.1f} TB"
 
-    def cleanup_old_backups(self, keep_count: int = 10) -> int:
-        """
-        Remove old automatic backups, keeping only the most recent ones
-
-        Args:
-            keep_count: Number of backups to keep
-
-        Returns:
-            Number of backups removed
-        """
-        backups = self.list_backups()
-        auto_backups = [b for b in backups if b.get("auto", False)]
-
-        if len(auto_backups) <= keep_count:
-            return 0
-
-        # Remove oldest auto backups
-        to_remove = auto_backups[keep_count:]
-        removed = 0
-
-        for backup in to_remove:
-            success, _ = self.delete_backup(backup["id"])
-            if success:
-                removed += 1
-
-        if removed > 0:
-            logger.info(f"清理了 {removed} 个旧备份")
-
-        return removed

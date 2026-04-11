@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from utils.logger import logger
-from utils.helpers import load_json, save_json, get_app_dir, init_external_content
+from utils.helpers import load_json, save_json, init_external_content
 from core.minecraft import MinecraftPath
 
 
@@ -86,21 +86,6 @@ class Installer:
             content_dir = init_external_content()
             self._content_base = os.path.join(content_dir, self.gtnh_version)
         return self._content_base
-
-    def get_available_versions(self) -> List[str]:
-        """Get list of available GTNH version folders"""
-        # Initialize external content folder if needed
-        content_dir = init_external_content()
-        if not os.path.exists(content_dir):
-            return []
-
-        versions = []
-        for item in os.listdir(content_dir):
-            item_path = os.path.join(content_dir, item)
-            if os.path.isdir(item_path):
-                versions.append(item)
-
-        return sorted(versions, reverse=True)
 
     @staticmethod
     def _empty_installed() -> Dict:
@@ -608,25 +593,3 @@ class Installer:
 
         return success_count, errors
 
-    def uninstall_multiple(
-        self,
-        resources: List[Tuple[str, ResourceType]],
-        progress_callback: Optional[Callable[[int, int, str], None]] = None
-    ) -> Tuple[int, List[str]]:
-        """Uninstall multiple resources"""
-        total = len(resources)
-        success_count = 0
-        errors = []
-
-        for i, (res_id, res_type) in enumerate(resources):
-            resource = self.get_resource_by_id(res_id, res_type)
-            if resource and progress_callback:
-                progress_callback(i + 1, total, resource.name)
-
-            success, message = self.uninstall_resource(res_id, res_type)
-            if success:
-                success_count += 1
-            else:
-                errors.append(message)
-
-        return success_count, errors

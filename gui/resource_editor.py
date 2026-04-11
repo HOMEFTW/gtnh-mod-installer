@@ -553,7 +553,6 @@ class ResourceEditorDialog(tk.Toplevel):
         # Copy new file
         new_dest_path = os.path.join(type_dir, new_filename)
         try:
-            import shutil
             shutil.copy2(file_path, new_dest_path)
             logger.info(f"已复制新文件: {new_filename}")
         except Exception as e:
@@ -637,14 +636,7 @@ class ResourceEditorDialog(tk.Toplevel):
 
     def _parse_mc_version_from_filename(self, filename: str) -> str:
         """Parse MC version from filename (GTNH specific)"""
-        import re
-        # Look for patterns like 2.7.0, 2.7.1, etc.
-        # But not the mod version itself
-        # This is tricky, so we'll look for common GTNH version patterns
-        patterns = [
-            r'-(\d+\.\d+\.\d+)\.jar$',  # -2.7.0.jar at end (might be confused with mod version)
-        ]
-        # For now, return empty and let user fill it
+        # TODO: implement GTNH version parsing from filename
         return ""
 
     def _delete_resource(self):
