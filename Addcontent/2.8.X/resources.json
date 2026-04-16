@@ -6,10 +6,324 @@
       "filename": "example-mod.jar",
       "description": "这是一个示例模组说明",
       "server_required": true
+    },
+    {
+      "id": "InputFix",
+      "filename": "[输入修复]InputFix-1.7.10-v6.jar",
+      "name": "[输入修复]InputFix",
+      "version": "v6",
+      "mc_version": "",
+      "description": "修复Minecraft低版本bug，允许你正常输入中文。仅在使用Java8进行游戏时需要安装。",
+      "server_required": false
+    },
+    {
+      "id": "nech",
+      "filename": "[NEI拼音搜索]nech-v0.1.5.jar",
+      "name": "[NEI拼音搜索]nech",
+      "version": "v0.1.5",
+      "mc_version": "2.8.X",
+      "description": "支持在NEI中拼音搜索的模组。支持全拼、首字母混合搜索等功能。",
+      "server_required": false
+    },
+    {
+      "id": "UT-Untranslator",
+      "filename": "[未转译者]UT.Untranslator-2.8.jar",
+      "name": "[未转译者]UT.Untranslator",
+      "version": "2.8",
+      "mc_version": "2.8.X",
+      "description": "专为GTNH设计的双语显示MOD，支持中、英、日任意两种语言，可调整三个显示位置。1.需要在.minecraft目录下放置GregTech_en_US.lang 2.启动GTNH后会在根目录生成GregTech.lang，将其修改成GregTech_en_US.lang即可在语言设置中修改本模组配置。3.如果发生任务书无法检查合成任务的情况，请在配置文件里将S:location=name改为S:location=tooltip",
+      "server_required": false
+    },
+    {
+      "id": "msbf",
+      "filename": "[侧键修复]msbf-v1.0.jar",
+      "name": "[侧键修复]msbf",
+      "version": "v1.0",
+      "mc_version": "",
+      "description": "修复鼠标侧键快捷键问题。",
+      "server_required": false
+    },
+    {
+      "id": "worldedit",
+      "filename": "[创世神]worldedit-v0.0.9.jar",
+      "name": "[创世神]worldedit",
+      "version": "v0.0.9",
+      "mc_version": "",
+      "description": "GTNH特供版本，强大的建筑辅助模组。",
+      "server_required": true
+    },
+    {
+      "id": "WorldEditCuiFe",
+      "filename": "[创世神可视]WorldEditCuiFe-v1.0.7-mf-1.7.10-10.13.4.1566.jar",
+      "name": "[创世神可视]WorldEditCuiFe",
+      "version": "v1.0.7",
+      "mc_version": "",
+      "description": "在使用创世神模组时，在游戏中显示可视化选取",
+      "server_required": false
+    },
+    {
+      "id": "OmniOcularUnofficial",
+      "filename": "[Waila扩展]OmniOcularUnofficial-1.6.0.jar",
+      "name": "[Waila扩展]OmniOcularUnofficial",
+      "version": "1.6.0",
+      "mc_version": "2.8.X",
+      "description": "Waila扩展模组。提供了客制化的根据方块NBT信息显示内容的功能。在GTNH中，本模组主要功能为显示正在运行的机器将产出的物品。本模组主要使用脚本文件（xml）和模组文件（jar），对于服务器来说，服务端必须安装脚本文件和模组文件，而客户端只需要安装模组文件；单人游玩必须同时安装脚本文件和模组文件。",
+      "server_required": true
+    },
+    {
+      "id": "neirecipetree",
+      "filename": "[NEI合成树]neirecipetree-0.0.5.jar",
+      "name": "[NEI合成树]neirecipetree",
+      "version": "0.0.5",
+      "mc_version": "",
+      "description": "NEI-RecipeTree 是一个面向 Minecraft 1.7.10 与 NotEnoughItems 的合成树模组，用来把 NEI 的单个配方页扩展成可递归浏览的整棵材料树。",
+      "server_required": false
+    },
+    {
+      "id": "SmoothFont",
+      "filename": "[平滑字体]SmoothFont-1.7.10-1.15.3.jar",
+      "name": "[平滑字体]SmoothFont",
+      "version": "1.15.3",
+      "mc_version": "",
+      "description": "若安装字体资源必须安装此模组或QZ-UI库二选一。此模组平滑地绘制所有字体（包括资源包的字体），以提高在所有比例的可读性。允许玩家使用系统中安装的任意TTF格式字体作为Minecraft的默认字体，更换字体需要重启。同时，本模组可修复字体出现重影的问题。加入mod后，请务必修改「根目录/config/angelica-modules.cfg」里的配置，搜索\"enableFontRenderer=true\"，将\"true\"改为\"false\"。 因angelica也修改了字体相关内容，同时修改可能会发生崩溃或其中一个不工作。",
+      "server_required": false
+    },
+    {
+      "id": "qz_uilib",
+      "filename": "[Qz-UI库]qz_uilib-1.8.2.jar",
+      "name": "[Qz-UI库]qz_uilib",
+      "version": "1.8.2",
+      "mc_version": "2.8.X",
+      "description": "若安装字体资源必须安装此模组或平滑字体二选一。1.将字体文件放置于.minecraft/fonts文件夹下，可在游戏内进行可视化字体排序。\n切换渲染字体：在配置项中，FontRender 需置为 true，即可在字体排序中排序想要渲染的字体。2.字体回滚机制：当某个字体无法渲染特定字符时，渲染器将自动依照排序顺序尝试后续字体，确保字符显示无缝兼容。3.彩色EMJ相关： 如果需要使用彩色EMJ和字符，可以使用JetBrain的JDK来启动游戏。",
+      "server_required": false
+    },
+    {
+      "id": "NoFog",
+      "filename": "[没有雾]NoFog-1.7.10b1-1.0.jar",
+      "name": "[没有雾]NoFog",
+      "version": "1.7.10b1-1.0",
+      "mc_version": "",
+      "description": "移除了所有雾",
+      "server_required": false
+    },
+    {
+      "id": "BetterTooltipBox",
+      "filename": "[更好的Tooltip]BetterTooltipBox-v1.1.4-fix.jar",
+      "name": "[更好的Tooltip]BetterTooltipBox",
+      "version": "v1.1.4",
+      "mc_version": "2.8.X",
+      "description": "本mod修改了游戏内Tooltip提示框，玩家可以自由按照固定的图片格式修改各种各样精美的贴图",
+      "server_required": false
+    },
+    {
+      "id": "TwistSpaceTechnology",
+      "filename": "[TST]TwistSpaceTechnology-0.7.15.jar",
+      "name": "[TST]TwistSpaceTechnology",
+      "version": "0.7.15",
+      "mc_version": "2.8.4",
+      "description": "玩GTNH私货必装。添加了一系列mega机器与一系列配方，极大地优化了中后期的游戏体验",
+      "server_required": true
+    },
+    {
+      "id": "programmablehatches",
+      "filename": "[可编程舱室]programmablehatches-0.1.3p55.jar",
+      "name": "[可编程舱室]programmablehatches",
+      "version": "0.1.3p55",
+      "mc_version": "2.8.4",
+      "description": "提供自动化更换虚拟电路与不消耗物品的方式，添加多种实用的总成和AE设备，极大地优化了前中期的游戏体验，也在一定程度上改善了中后期游戏体验",
+      "server_required": true
+    },
+    {
+      "id": "boxplusplus",
+      "filename": "[盒]boxplusplus-2.1.2.jar",
+      "name": "[盒]boxplusplus",
+      "version": "2.1.2",
+      "mc_version": "2.8.4",
+      "description": "任意封装你的产线，玩弄配方于掌心，并为你的基地装饰一个非常炫酷的动画！",
+      "server_required": true
+    },
+    {
+      "id": "ae2thing",
+      "filename": "[AE2附属]ae2thing-v1.2.14.jar",
+      "name": "[AE2附属]ae2thing",
+      "version": "v1.2.14",
+      "mc_version": "2.8.4",
+      "description": "无限存储单元,可以不限种类的存储物品.流体 源质离散器,注魔接口,炼金接口(TC注魔炼金三件套) 鱼大和猫蛋蛋玩偶、比APU更好用的样板自动上传（自动搜索甚至不用点进上传）",
+      "server_required": true
+    },
+    {
+      "id": "EZMiner",
+      "filename": "[连锁挖矿]EZMiner-1.5+2.8.0.jar",
+      "name": "[连锁挖矿]EZMiner",
+      "version": "1.5",
+      "mc_version": "2.8.X",
+      "description": "可配置一个连锁按键(默认~)和主模式切换键(默认V)。QZMiner的改进版,连锁键+滚轮切换子模式,改进了连锁性能,具体说明见Github的Readme",
+      "server_required": true
+    },
+    {
+      "id": "OTHTechnology",
+      "filename": "OTHTechnology-2.1.8+2.8.4.jar",
+      "name": "[123科技]OTHTechnology",
+      "version": "2.1.8",
+      "mc_version": "2.8.4",
+      "description": "为游戏添加了一系列来自社群或网络相关梗的机器，涵盖全游戏阶段，大多偏向整活性质，同时为游戏添加了max+内容。",
+      "server_required": true
+    },
+    {
+      "id": "NHUtilities",
+      "filename": "[NHU]NHUtilities-1.6.4.jar",
+      "name": "[NHU]NHUtilities",
+      "version": "1.6.4",
+      "mc_version": "2.8.X",
+      "description": "加入了时间瓶、暴食魔符、暴食指环、饥饿指环、奥术工业高炉、超级午餐盒、神秘注魔燃料棒（闪耀之光和元始珍珠）、debug维护仓简单合成配方、Kami神环（类似无尽的防御）、法杖核心：航空胶带、净化之戒、更多的无线仓室、更多逆天的魔法能源收集器和龙蛋等",
+      "server_required": true
+    },
+    {
+      "id": "thinktech",
+      "filename": "[俺寻思科技]thinktech-0.1.9.jar",
+      "name": "[俺寻思科技]thinktech",
+      "version": "0.1.9",
+      "mc_version": "2.8.X",
+      "description": "GTNH整合包的拓展Mod,致力于将新的产线和机器加入到游戏中以丰富流程 基于俺寻思之力！",
+      "server_required": true
+    },
+    {
+      "id": "gtnothard",
+      "filename": "[格雷不难]gtnothard-v1.2.2.jar",
+      "name": "[格雷不难]gtnothard",
+      "version": "v1.2.2",
+      "mc_version": "2.8.4",
+      "description": "用电机器Chaos，类似处理阵列，但是可以放入多方块机器；发电机器Origin，类似发电处理阵列，只可以放入单方块发电机；白嫖型机器Singularity，放入GT NEI Ore Plugin的维度物品，每60tick产出该维度可以产出的物品。",
+      "server_required": true
+    },
+    {
+      "id": "SkinPort",
+      "filename": "[皮肤补丁]SkinPort-1.7.10-v10d.jar",
+      "name": "[皮肤补丁]SkinPort",
+      "version": "v10d",
+      "mc_version": "",
+      "description": "1.7.10的1.8皮肤补丁",
+      "server_required": true
+    },
+    {
+      "id": "InputMethodBlocker",
+      "filename": "[输入法补丁]InputMethodBlocker-1.7.x-1.5.0.jar",
+      "name": "[输入法补丁]InputMethodBlocker",
+      "version": "1.5.0",
+      "mc_version": "",
+      "description": "修复一按shift键就切换输入法而无法潜行的低版本恶心bug",
+      "server_required": false
     }
   ],
-  "scripts": [],
-  "configs": [],
+  "scripts": [
+    {
+      "id": "FTWCustoms",
+      "filename": "FTWCustoms v1.1.zs",
+      "name": "FTWCustoms",
+      "version": "v1.1",
+      "mc_version": "",
+      "description": "严禁刚开始玩就安装！！！安装器作者自己编写（抄袭）的脚本，因未做任何平衡对GTNH的流程极具破坏性，请多周目为速通时安装，严禁刚开始玩就安装！！！想用较为平衡的请使用Nxer大佬编写的脚本"
+    },
+    {
+      "id": "RanLiao",
+      "filename": "RanLiao v1.0.zs",
+      "name": "RanLiao",
+      "version": "v1.0",
+      "mc_version": "",
+      "description": "严禁刚开始玩就安装！！！对染料配方进行修改，使得获取更加方便一些"
+    }
+  ],
+  "configs": [
+    {
+      "id": "OmniOcular",
+      "filename": "OmniOcular",
+      "name": "OmniOcular",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "[Waila扩展]OmniOcularUnofficial模组的配置文件，装了OmniOcularUnofficial必装此配置"
+    },
+    {
+      "id": "hodgepodge",
+      "filename": "hodgepodge.cfg",
+      "name": "hodgepodge.cfg",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "关闭正版验证必改config"
+    },
+    {
+      "id": "GregTech污染关闭",
+      "filename": "GregTech",
+      "name": "GregTech污染关闭",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "关闭格雷的污染"
+    },
+    {
+      "id": "gendustry",
+      "filename": "gendustry",
+      "name": "gendustry基因工业",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "基因工业设备不会使蜜蜂死亡"
+    },
+    {
+      "id": "EnhancedLootBags",
+      "filename": "EnhancedLootBags",
+      "name": "EnhancedLootBagsz战利品袋",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "战利品袋不再出垃圾了"
+    },
+    {
+      "id": "EnderStorage",
+      "filename": "EnderStorage.cfg",
+      "name": "EnderStorage末影箱",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "末影箱容量修改"
+    },
+    {
+      "id": "InfernalMobs",
+      "filename": "InfernalMobs.cfg",
+      "name": "InfernalMobs精英怪",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "关闭精英怪反伤，织网，黑暗"
+    },
+    {
+      "id": "angelica-modules",
+      "filename": "angelica-modules.cfg",
+      "name": "angelica-modulesa安洁莉卡字体",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "安洁莉卡关闭字体安装，安装平滑字体smoothfont时需要安装此配置文件"
+    },
+    {
+      "id": "bartworks",
+      "filename": "bartworks.cfg",
+      "name": "bartworks.cfg",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "修改罗斯128b的遗迹生成概率"
+    },
+    {
+      "id": "structurelib",
+      "filename": "structurelib.cfg",
+      "name": "structurelib自动放置",
+      "version": "",
+      "mc_version": "2.8.4",
+      "description": "让自动放置一次可放更多方块"
+    }
+  ],
   "fonts": [],
-  "resourcepacks": []
+  "resourcepacks": [
+    {
+      "id": "GTNH-Faithful-x32",
+      "filename": "GTNH-Faithful-x32.v2.1.4.zip",
+      "name": "GTNH-Faithful-x32.v2.1.4.zip",
+      "version": "v2.1.4",
+      "mc_version": "2.8.X",
+      "description": "GTNH原版增强材质"
+    }
+  ]
 }

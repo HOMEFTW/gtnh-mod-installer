@@ -7,6 +7,8 @@ import shutil
 import sys
 from typing import Any, Dict, Optional
 
+CONTENT_SUBDIRS = ("scripts", "resourcepacks", "mods", "fonts", "configs")
+
 
 def load_json(file_path: str) -> Optional[Dict[str, Any]]:
     """Load JSON file and return dict, or None if file doesn't exist"""
@@ -67,12 +69,27 @@ def get_external_content_dir() -> str:
     return os.path.join(get_exe_dir(), 'Addcontent')
 
 
+def ensure_content_version_directories(content_dir: str):
+    """Ensure each GTNH version directory contains the expected resource folders."""
+    if not os.path.exists(content_dir):
+        return
+
+    for item in os.listdir(content_dir):
+        version_dir = os.path.join(content_dir, item)
+        if not os.path.isdir(version_dir):
+            continue
+
+        for subdir in CONTENT_SUBDIRS:
+            os.makedirs(os.path.join(version_dir, subdir), exist_ok=True)
+
+
 def init_external_content():
     """Initialize external Addcontent folder on first run"""
     external_dir = get_external_content_dir()
 
     # If external already exists, nothing to do
     if os.path.exists(external_dir):
+        ensure_content_version_directories(external_dir)
         return external_dir
 
     # If frozen and bundled content exists, extract it
@@ -86,6 +103,6 @@ def init_external_content():
         os.makedirs(external_dir, exist_ok=True)
         print(f"已创建资源目录: {external_dir}")
 
+    ensure_content_version_directories(external_dir)
     return external_dir
-
 

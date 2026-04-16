@@ -2,7 +2,7 @@
 Dialog windows for GTNH Mod Installer GUI
 """
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+from tkinter import ttk, filedialog, messagebox
 from typing import Optional
 
 
@@ -30,11 +30,11 @@ class BackupDialog(tk.Toplevel):
         self.backup_manager = backup_manager
         self.has_server = has_server
         self.on_restore_callback = on_restore_callback
-        self.selected_backup: Optional[str] = None
+        self._backups = []
 
         self._create_widgets()
-        self._load_backups()
         self._center_window()
+        self.after(0, self._schedule_load_backups)
 
     def _create_widgets(self):
         self.geometry("600x400")
@@ -44,6 +44,8 @@ class BackupDialog(tk.Toplevel):
 
         # Backup list
         ttk.Label(main_frame, text="可用备份:").pack(anchor=tk.W)
+        self.status_var = tk.StringVar(value="准备加载备份...")
+        ttk.Label(main_frame, textvariable=self.status_var).pack(anchor=tk.W, pady=(0, 5))
 
         list_frame = ttk.Frame(main_frame)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -106,29 +108,62 @@ class BackupDialog(tk.Toplevel):
 
     def _load_backups(self):
         """Load and display backups"""
+        self._backups = self._sorted_backups(self.backup_manager.list_backups())
+        self._render_backups()
+
+    def _schedule_load_backups(self):
+        """Defer backup loading until after the dialog is visible."""
+        self.status_var.set("正在加载备份...")
+        self.after(10, self._load_backups)
+
+    @staticmethod
+    def _backup_row_values(backup: dict):
+        """Format backup data for treeview display."""
+        has_client = backup.get('has_client', False)
+        has_server = backup.get('has_server', False)
+        if has_client and has_server:
+            backup_type = "客户端+服务端"
+        elif has_client:
+            backup_type = "客户端"
+        elif has_server:
+            backup_type = "服务端"
+        else:
+            backup_type = "未知"
+
+        return (
+            backup['id'],
+            backup.get('created', '')[:19].replace('T', ' '),
+            backup_type,
+            backup.get('size_str', '')
+        )
+
+    @staticmethod
+    def _sorted_backups(backups):
+        """Sort backups newest first by created timestamp."""
+        return sorted(backups, key=lambda x: x.get("created", ""), reverse=True)
+
+    def _render_backups(self):
+        """Render the current backup list into the treeview."""
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        backups = self.backup_manager.list_backups()
-        for backup in backups:
-            # Determine type display
-            has_client = backup.get('has_client', False)
-            has_server = backup.get('has_server', False)
-            if has_client and has_server:
-                backup_type = "客户端+服务端"
-            elif has_client:
-                backup_type = "客户端"
-            elif has_server:
-                backup_type = "服务端"
-            else:
-                backup_type = "未知"
+        for backup in self._backups:
+            self.tree.insert('', tk.END, iid=backup['id'], values=self._backup_row_values(backup))
 
-            self.tree.insert('', tk.END, iid=backup['id'], values=(
-                backup['id'],
-                backup.get('created', '')[:19].replace('T', ' '),
-                backup_type,
-                backup.get('size_str', '')
-            ))
+        count = len(self._backups)
+        self.status_var.set(f"已加载 {count} 个备份" if count else "没有可用备份")
+
+    def _upsert_backup(self, backup: dict):
+        """Insert or replace a backup in the current list, keeping sort order."""
+        self._backups = [item for item in self._backups if item["id"] != backup["id"]]
+        self._backups.append(backup)
+        self._backups = self._sorted_backups(self._backups)
+        self._render_backups()
+
+    def _remove_backup(self, backup_id: str):
+        """Remove a backup from the current list and refresh the treeview."""
+        self._backups = [item for item in self._backups if item["id"] != backup_id]
+        self._render_backups()
 
     def _create_backup(self, backup_type: str):
         """Create a new backup"""
@@ -137,7 +172,14 @@ class BackupDialog(tk.Toplevel):
             success, message = self.backup_manager.create_backup(name if name.strip() else None, backup_type)
             if success:
                 messagebox.showinfo("成功", f"备份创建成功: {message}", parent=self)
-                self._load_backups()
+                new_backup = next(
+                    (item for item in self.backup_manager.list_backups() if item["id"] == message),
+                    None
+                )
+                if new_backup:
+                    self._upsert_backup(new_backup)
+                else:
+                    self._schedule_load_backups()
             else:
                 messagebox.showerror("错误", message, parent=self)
 
@@ -209,7 +251,7 @@ class BackupDialog(tk.Toplevel):
             success, message = self.backup_manager.delete_backup(backup_id)
             if success:
                 messagebox.showinfo("成功", message, parent=self)
-                self._load_backups()
+                self._remove_backup(backup_id)
             else:
                 messagebox.showerror("错误", message, parent=self)
 
@@ -234,7 +276,7 @@ class AboutDialog(tk.Toplevel):
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(main_frame, text="GTNH 私货安装器", font=('Arial', 14, 'bold')).pack()
-        ttk.Label(main_frame, text="版本 1.0.0").pack(pady=5)
+        ttk.Label(main_frame, text="版本 1.1").pack(pady=5)
         ttk.Label(main_frame, text="为 GTNH 整合包安装额外模组、脚本和配置文件").pack(pady=10)
         ttk.Label(main_frame, text="工作室 Andgatech").pack(pady=2)
         ttk.Label(main_frame, text="© 2026").pack()

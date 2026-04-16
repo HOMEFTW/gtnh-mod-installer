@@ -15,7 +15,14 @@ from core.minecraft import MinecraftPath
 from core.installer import Installer, ResourceType
 from core.backup import BackupManager
 from utils.logger import logger
-from utils.helpers import load_json, save_json, get_app_dir, init_external_content, is_frozen
+from utils.helpers import (
+    ensure_content_version_directories,
+    get_app_dir,
+    init_external_content,
+    is_frozen,
+    load_json,
+    save_json,
+)
 
 # Try to import tkinterdnd2 for drag and drop support
 try:
@@ -28,7 +35,7 @@ except ImportError:
 class MainWindow:
     """Main application window"""
 
-    TITLE = "GTNH 私货安装器 v1.0"
+    TITLE = "GTNH 私货安装器 v1.1"
 
     def __init__(self):
         # Use TkinterDnD.Tk() if available, otherwise fallback to tk.Tk()
@@ -315,6 +322,7 @@ class MainWindow:
         """Refresh available versions from Addcontent directory"""
         # Initialize external content folder if needed
         content_dir = init_external_content()
+        ensure_content_version_directories(content_dir)
 
         versions = []
         if os.path.exists(content_dir):
@@ -340,6 +348,7 @@ class MainWindow:
         version = self.version_var.get()
         if version and self.installer:
             self.current_version = version
+            ensure_content_version_directories(init_external_content())
             self.installer.set_gtnh_version(version)
             self._load_all_resources()
             self._save_config()
@@ -483,37 +492,33 @@ class MainWindow:
         installed_data = []
         has_server = self.installer.server_mc_path is not None
 
-        for res_type in [ResourceType.MOD, ResourceType.SCRIPT, ResourceType.CONFIG,
-                         ResourceType.FONT, ResourceType.RESOURCEPACK]:
-            resources = self.installer.load_resources(res_type)
+        for item in self.installer.get_all_installed_resources():
+            client_installed = item["client_installed"]
+            server_installed = item["server_installed"]
 
-            for res in resources:
-                install_status = self.installer.get_install_status(res.id, res_type)
-                client_installed = install_status["client"]
-                server_installed = install_status["server"]
+            if has_server:
+                if client_installed and server_installed:
+                    status_desc = "客户端/服务端已安装"
+                elif client_installed:
+                    status_desc = "客户端已安装"
+                elif server_installed:
+                    status_desc = "服务端已安装"
+                else:
+                    status_desc = "未安装"
+            else:
+                status_desc = "已安装" if client_installed else "未安装"
 
-                if client_installed or server_installed:
-                    # Build description based on installation status
-                    if has_server:
-                        if client_installed and server_installed:
-                            status_desc = "客户端/服务端已安装"
-                        elif client_installed:
-                            status_desc = "客户端已安装"
-                        elif server_installed:
-                            status_desc = "服务端已安装"
-                        else:
-                            status_desc = "未安装"
-                    else:
-                        status_desc = "已安装" if client_installed else "未安装"
+            if item.get("missing"):
+                status_desc += " (当前版本资源清单中不存在)"
 
-                    installed_data.append({
-                        'id': res.id,
-                        'name': res.name,
-                        'description': status_desc,
-                        'installed': True,
-                        'resource': res,
-                        'type': res_type.value
-                    })
+            installed_data.append({
+                'id': item['id'],
+                'name': item['name'],
+                'description': status_desc,
+                'installed': True,
+                'resource': item.get('resource'),
+                'type': item['resource_type'].value
+            })
 
         self.installed_list.set_resources(installed_data)
 

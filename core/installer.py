@@ -98,6 +98,48 @@ class Installer:
             "resourcepacks": []
         }
 
+    @staticmethod
+    def _entry_id(entry) -> str:
+        """Extract resource id from legacy string or structured entry."""
+        if isinstance(entry, dict):
+            return entry.get("id", "")
+        return entry
+
+    @staticmethod
+    def _entry_filename(entry) -> str:
+        """Extract tracked filename from legacy string or structured entry."""
+        if isinstance(entry, dict):
+            return entry.get("filename", "") or entry.get("id", "")
+        return entry
+
+    @staticmethod
+    def _entry_name(entry) -> str:
+        """Extract tracked display name from legacy string or structured entry."""
+        if isinstance(entry, dict):
+            return entry.get("name", "") or entry.get("id", "")
+        return entry
+
+    def _get_installed_entry(self, installed_data: Dict, type_key: str, resource_id: str):
+        """Get raw installed entry by id."""
+        for entry in installed_data.get(type_key, []):
+            if self._entry_id(entry) == resource_id:
+                return entry
+        return None
+
+    def _record_installed_resource(self, installed_data: Dict, type_key: str, resource: Resource):
+        """Persist structured install metadata while remaining backward compatible."""
+        entry = {
+            "id": resource.id,
+            "name": resource.name,
+            "filename": resource.filename
+        }
+        existing = installed_data.get(type_key, [])
+        for idx, current in enumerate(existing):
+            if self._entry_id(current) == resource.id:
+                existing[idx] = entry
+                return
+        existing.append(entry)
+
     def _load_client_installed(self) -> Dict:
         """Load client installed resources"""
         if self._client_installed is not None:
@@ -330,6 +372,7 @@ class Installer:
             install_side: "both", "client", or "server"
         """
         type_key = resource.resource_type.value
+        installed_anywhere = False
 
         # Copy to client
         if install_side in ("both", "client"):
@@ -356,13 +399,13 @@ class Installer:
 
             # Record client installation
             client_installed = self._load_client_installed()
-            if resource.id not in client_installed[type_key]:
-                client_installed[type_key].append(resource.id)
+            self._record_installed_resource(client_installed, type_key, resource)
             if resource.resource_type == ResourceType.CONFIG and client_copied_files:
                 if "config_files" not in client_installed:
                     client_installed["config_files"] = {}
                 client_installed["config_files"][resource.id] = client_copied_files
             self._save_client_installed()
+            installed_anywhere = True
 
         # Determine if should install on server
         should_install_server = False
@@ -386,15 +429,18 @@ class Installer:
                 if server_success:
                     logger.info(f"已同步到服务端: {resource.filename}")
                     server_installed = self._load_server_installed()
-                    if resource.id not in server_installed[type_key]:
-                        server_installed[type_key].append(resource.id)
+                    self._record_installed_resource(server_installed, type_key, resource)
                     if resource.resource_type == ResourceType.CONFIG and server_copied_files:
                         if "config_files" not in server_installed:
                             server_installed["config_files"] = {}
                         server_installed["config_files"][resource.id] = server_copied_files
                     self._save_server_installed()
+                    installed_anywhere = True
                 else:
                     logger.warning(f"服务端安装失败: {server_message}")
+
+        if not installed_anywhere:
+            return False, f"资源无法安装到所选位置: {resource.name}"
 
         logger.success(f"安装成功: {resource.name}")
         return True, f"成功安装: {resource.name}"
@@ -402,14 +448,26 @@ class Installer:
     def uninstall_resource(self, resource_id: str, resource_type: ResourceType, uninstall_server: bool = True) -> Tuple[bool, str]:
         """Uninstall a resource from client and optionally from server"""
         resource = self.get_resource_by_id(resource_id, resource_type)
-        if not resource:
-            return False, f"未找到资源: {resource_id}"
-
         type_key = resource_type.value
         removed_from = []
+        client_installed = self._load_client_installed()
+        server_installed = self._load_server_installed()
+        client_entry = self._get_installed_entry(client_installed, type_key, resource_id)
+        server_entry = self._get_installed_entry(server_installed, type_key, resource_id)
+
+        if not resource:
+            tracked_entry = client_entry or server_entry
+            if not tracked_entry:
+                return False, f"未找到资源: {resource_id}"
+            resource = Resource(
+                id=resource_id,
+                name=self._entry_name(tracked_entry) or resource_id,
+                filename=self._entry_filename(tracked_entry) or resource_id,
+                source_path="",
+                resource_type=resource_type
+            )
 
         # Uninstall from client
-        client_installed = self._load_client_installed()
         dest_dir = self._get_dest_dir(resource_type)
         if dest_dir:
             # For configs, delete tracked files
@@ -480,13 +538,12 @@ class Installer:
                     except Exception as e:
                         logger.error(f"fontfiles 删除失败: {str(e)}")
 
-            if resource_id in client_installed[type_key]:
-                client_installed[type_key].remove(resource_id)
+            if client_entry in client_installed[type_key]:
+                client_installed[type_key].remove(client_entry)
             self._save_client_installed()
 
         # Uninstall from server if requested
         if uninstall_server and self.server_mc_path:
-            server_installed = self._load_server_installed()
             server_dest_dir = self._get_dest_dir(resource_type, self.server_mc_path)
             if server_dest_dir:
                 if resource_type == ResourceType.CONFIG:
@@ -532,8 +589,8 @@ class Installer:
                     except Exception as e:
                         logger.error(f"服务端删除失败: {str(e)}")
 
-                if resource_id in server_installed[type_key]:
-                    server_installed[type_key].remove(resource_id)
+                if server_entry in server_installed[type_key]:
+                    server_installed[type_key].remove(server_entry)
                 self._save_server_installed()
 
         if removed_from:
@@ -546,12 +603,12 @@ class Installer:
         """Get list of installed resource IDs for a type"""
         type_key = resource_type.value
         if location == "client":
-            return self._load_client_installed().get(type_key, [])
+            return [self._entry_id(entry) for entry in self._load_client_installed().get(type_key, [])]
         elif location == "server":
-            return self._load_server_installed().get(type_key, [])
+            return [self._entry_id(entry) for entry in self._load_server_installed().get(type_key, [])]
         else:
-            client_set = set(self._load_client_installed().get(type_key, []))
-            server_set = set(self._load_server_installed().get(type_key, []))
+            client_set = set(self.get_installed_resources(resource_type, "client"))
+            server_set = set(self.get_installed_resources(resource_type, "server"))
             return list(client_set | server_set)
 
     def is_installed(self, resource_id: str, resource_type: ResourceType, location: str = "client") -> bool:
@@ -564,6 +621,42 @@ class Installer:
             "client": resource_id in self.get_installed_resources(resource_type, "client"),
             "server": resource_id in self.get_installed_resources(resource_type, "server")
         }
+
+    def get_all_installed_resources(self) -> List[Dict]:
+        """Return all tracked installed resources, including entries missing from current content."""
+        installed_items = []
+        client_installed = self._load_client_installed()
+        server_installed = self._load_server_installed()
+
+        for res_type in ResourceType:
+            type_key = res_type.value
+            seen_ids = set()
+            for installed_data, location in (
+                (client_installed, "client"),
+                (server_installed, "server"),
+            ):
+                for entry in installed_data.get(type_key, []):
+                    res_id = self._entry_id(entry)
+                    if not res_id or res_id in seen_ids:
+                        continue
+                    seen_ids.add(res_id)
+
+                    resource = self.get_resource_by_id(res_id, res_type)
+                    client_status = res_id in self.get_installed_resources(res_type, "client")
+                    server_status = res_id in self.get_installed_resources(res_type, "server")
+
+                    installed_items.append({
+                        "id": res_id,
+                        "name": resource.name if resource else self._entry_name(entry) or res_id,
+                        "filename": resource.filename if resource else self._entry_filename(entry) or res_id,
+                        "resource_type": res_type,
+                        "resource": resource,
+                        "missing": resource is None,
+                        "client_installed": client_status,
+                        "server_installed": server_status,
+                    })
+
+        return installed_items
 
     def install_multiple(
         self,
@@ -592,4 +685,3 @@ class Installer:
                 errors.append(message)
 
         return success_count, errors
-

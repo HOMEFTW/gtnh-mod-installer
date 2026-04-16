@@ -8,7 +8,7 @@ import os
 import re
 import shutil
 
-from utils.helpers import load_json, save_json, get_app_dir, init_external_content
+from utils.helpers import load_json, save_json, init_external_content
 from utils.logger import logger
 
 
@@ -16,6 +16,8 @@ class ResourceEditorDialog(tk.Toplevel):
     """Dialog for editing resource metadata"""
 
     RESOURCE_TYPES = ['mods', 'scripts', 'configs', 'fonts', 'resourcepacks']
+    _versions_cache: Optional[List[str]] = None
+    _resources_cache: Dict[str, Dict[str, List[dict]]] = {}
 
     def __init__(self, parent, gtnh_version: str = "",
                  initial_type: str = "mods",
@@ -44,16 +46,13 @@ class ResourceEditorDialog(tk.Toplevel):
         self._original_filename: Optional[str] = None  # Track original filename for rename
         self.client_path = client_path
         self.server_path = server_path
+        self._pending_load_job = None
 
         # Build UI
         self._create_widgets()
         self._update_server_install_label()  # Set initial label text
-        self._load_versions()
         self._center_window()
-
-        # Load initial data
-        if self.current_version:
-            self._load_resources()
+        self.after(0, self._load_initial_data)
 
         # Wait for window to close before returning
         self.wait_window(self)
@@ -85,6 +84,8 @@ class ResourceEditorDialog(tk.Toplevel):
                                            width=12, state='readonly')
         self.version_combo.pack(side=tk.LEFT, padx=5)
         self.version_combo.bind('<<ComboboxSelected>>', self._on_version_changed)
+        self.loading_var = tk.StringVar(value="准备加载资源...")
+        ttk.Label(top_frame, textvariable=self.loading_var).pack(side=tk.RIGHT)
 
         # Main content frame (left-right split)
         content_frame = ttk.Frame(self, padding=5)
@@ -200,14 +201,10 @@ class ResourceEditorDialog(tk.Toplevel):
         """Load available GTNH versions"""
         # Initialize external content folder if needed
         content_dir = init_external_content()
-
-        versions = []
-        if os.path.exists(content_dir):
-            for item in os.listdir(content_dir):
-                item_path = os.path.join(content_dir, item)
-                if os.path.isdir(item_path):
-                    versions.append(item)
-            versions = sorted(versions, reverse=True)
+        versions = self._versions_cache
+        if versions is None:
+            versions = self._list_versions_from_content_dir(content_dir)
+            self.__class__._versions_cache = versions
 
         self.version_combo['values'] = versions
 
@@ -220,12 +217,41 @@ class ResourceEditorDialog(tk.Toplevel):
     def _on_version_changed(self, _event):
         """Handle version selection change"""
         self.current_version = self.version_var.get()
-        self._load_resources()
+        self._schedule_resource_load("正在切换版本...")
 
     def _on_type_changed(self, _event):
         """Handle resource type change"""
         self.current_type = self.type_var.get()
         self._update_server_install_label()
+        self._schedule_resource_load("正在切换资源类型...")
+
+    def _load_initial_data(self):
+        """Load initial versions and resources after the dialog becomes visible."""
+        self.loading_var.set("正在加载版本和资源...")
+        self.file_listbox.delete(0, tk.END)
+        self.file_listbox.insert(tk.END, "正在加载...")
+        self.after(10, self._finish_initial_data_load)
+
+    def _finish_initial_data_load(self):
+        """Complete initial data loading."""
+        self._load_versions()
+        if self.current_version:
+            self._load_resources()
+        else:
+            self.loading_var.set("没有可用版本")
+
+    def _schedule_resource_load(self, message: str = "正在加载资源..."):
+        """Defer resource loading so the UI can render feedback first."""
+        self.loading_var.set(message)
+        self.file_listbox.delete(0, tk.END)
+        self.file_listbox.insert(tk.END, "正在加载...")
+        if self._pending_load_job is not None:
+            self.after_cancel(self._pending_load_job)
+        self._pending_load_job = self.after(10, self._run_scheduled_resource_load)
+
+    def _run_scheduled_resource_load(self):
+        """Run a pending deferred resource load."""
+        self._pending_load_job = None
         self._load_resources()
 
     def _update_server_install_label(self):
@@ -249,19 +275,10 @@ class ResourceEditorDialog(tk.Toplevel):
     def _load_resources(self):
         """Load resources for current version and type"""
         if not self.current_version:
+            self.loading_var.set("没有可用版本")
             return
 
-        # Load resources.json
-        content_dir = init_external_content()
-        json_path = os.path.join(content_dir, self.current_version, "resources.json")
-        self.resources_data = load_json(json_path) or {
-            "mods": [], "scripts": [], "configs": [], "fonts": [], "resourcepacks": []
-        }
-
-        # Ensure all keys exist
-        for key in self.RESOURCE_TYPES:
-            if key not in self.resources_data:
-                self.resources_data[key] = []
+        self.resources_data = self._get_resources_data(self.current_version)
 
         self._refresh_file_list()
 
@@ -285,23 +302,12 @@ class ResourceEditorDialog(tk.Toplevel):
 
         # Get resources with metadata
         resources = self.resources_data.get(self.current_type, [])
-        resources_by_filename = {r.get('filename'): r for r in resources}
-
-        # Display: items with metadata first (marked with ☑)
-        displayed_ids = []
-        for res in resources:
-            filename = res.get('filename', '')
-            marker = '☑' if filename in actual_items else '☑⚠'  # item missing
-            self.file_listbox.insert(tk.END, f"{marker} {res.get('id', '')} ({filename})")
-            displayed_ids.append(res.get('id'))
-
-        # Then items without metadata (marked with ☐)
-        for filename in sorted(actual_items):
-            if filename not in resources_by_filename:
-                self.file_listbox.insert(tk.END, f"☐ {filename}")
-                displayed_ids.append(filename)
+        display_rows, displayed_ids = self._build_file_list_entries(resources, actual_items)
+        for row in display_rows:
+            self.file_listbox.insert(tk.END, row)
 
         self._displayed_ids = displayed_ids
+        self.loading_var.set(f"已加载 {len(displayed_ids)} 个资源项")
 
         # Select initial item if provided
         if self.selected_id and self.selected_id in displayed_ids:
@@ -309,6 +315,64 @@ class ResourceEditorDialog(tk.Toplevel):
             self.file_listbox.selection_set(idx)
             self._load_resource_to_form(self.selected_id)
             self.selected_id = None
+
+    @staticmethod
+    def _build_file_list_entries(resources: List[dict], actual_items: set):
+        """Build listbox rows and ids from metadata and actual files."""
+        resources_by_filename = {r.get('filename'): r for r in resources}
+        rows = []
+        displayed_ids = []
+
+        for res in resources:
+            filename = res.get('filename', '')
+            marker = '☑' if filename in actual_items else '☑⚠'
+            rows.append(f"{marker} {res.get('id', '')} ({filename})")
+            displayed_ids.append(res.get('id'))
+
+        for filename in sorted(actual_items):
+            if filename not in resources_by_filename:
+                rows.append(f"☐ {filename}")
+                displayed_ids.append(filename)
+
+        return rows, displayed_ids
+
+    @classmethod
+    def _list_versions_from_content_dir(cls, content_dir: str) -> List[str]:
+        """List version directories newest first."""
+        versions = []
+        if os.path.exists(content_dir):
+            for item in os.listdir(content_dir):
+                item_path = os.path.join(content_dir, item)
+                if os.path.isdir(item_path):
+                    versions.append(item)
+        return sorted(versions, reverse=True)
+
+    @classmethod
+    def _normalize_resources_data(cls, resources_data: Optional[Dict[str, List[dict]]]) -> Dict[str, List[dict]]:
+        """Ensure all resource-type keys exist."""
+        normalized = dict(resources_data or {})
+        for key in cls.RESOURCE_TYPES:
+            normalized.setdefault(key, [])
+        return normalized
+
+    @classmethod
+    def _get_resources_data(cls, version: str) -> Dict[str, List[dict]]:
+        """Load version resources.json with a simple in-process cache."""
+        cached = cls._resources_cache.get(version)
+        if cached is None:
+            content_dir = init_external_content()
+            json_path = os.path.join(content_dir, version, "resources.json")
+            cached = cls._normalize_resources_data(load_json(json_path))
+            cls._resources_cache[version] = {key: list(value) for key, value in cached.items()}
+        return {key: list(value) for key, value in cached.items()}
+
+    @classmethod
+    def _invalidate_resources_cache(cls, version: Optional[str] = None):
+        """Invalidate cached resources metadata."""
+        if version is None:
+            cls._resources_cache.clear()
+        else:
+            cls._resources_cache.pop(version, None)
 
     def _on_file_select(self, _event):
         """Handle file selection in listbox"""
@@ -680,6 +744,7 @@ class ResourceEditorDialog(tk.Toplevel):
         os.makedirs(os.path.dirname(json_path), exist_ok=True)
 
         save_json(json_path, self.resources_data)
+        self._invalidate_resources_cache(self.current_version)
 
     def _on_close(self):
         """Close the dialog"""

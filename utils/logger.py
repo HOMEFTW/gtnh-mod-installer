@@ -2,7 +2,6 @@
 Logger module for GTNH Mod Installer
 """
 import logging
-import os
 from datetime import datetime
 from typing import Optional, Callable
 

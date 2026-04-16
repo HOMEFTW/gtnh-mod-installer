@@ -3,7 +3,6 @@ Backup and restore functionality for GTNH Mod Installer
 """
 import os
 import shutil
-import json
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
@@ -40,6 +39,24 @@ class BackupManager:
     def _save_backup_meta(self, meta: Dict):
         """Save backup metadata"""
         save_json(self._get_backup_meta_path(), meta)
+
+    def _calculate_backup_summary(self, backup_path: str) -> Dict:
+        """Calculate cached summary fields for a backup directory."""
+        total_size = 0
+        for dirpath, dirnames, filenames in os.walk(backup_path):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                total_size += os.path.getsize(fp)
+
+        has_client = os.path.exists(os.path.join(backup_path, "client"))
+        has_server = os.path.exists(os.path.join(backup_path, "server"))
+
+        return {
+            "size": total_size,
+            "size_str": self._format_size(total_size),
+            "has_client": has_client,
+            "has_server": has_server,
+        }
 
     def set_server_path(self, server_path: str):
         """Set server path for backup"""
@@ -112,7 +129,7 @@ class BackupManager:
                     logger.info(f"已备份服务端: {installer_data_dir}")
 
             if not backed_up["client"] and not backed_up["server"]:
-                os.rmdir(backup_path)
+                shutil.rmtree(backup_path, ignore_errors=True)
                 return False, "没有可备份的内容"
 
             # Save backup metadata
@@ -124,6 +141,7 @@ class BackupManager:
                 "auto": name is None,
                 "type": backup_type
             }
+            backup_info.update(self._calculate_backup_summary(backup_path))
             meta["backups"].append(backup_info)
             self._save_backup_meta(meta)
 
@@ -222,27 +240,20 @@ class BackupManager:
         """
         meta = self._load_backup_meta()
         backups = []
+        meta_changed = False
 
         for backup_info in meta.get("backups", []):
             backup_path = os.path.join(self.backup_base, backup_info["id"])
             # Verify backup still exists
             if os.path.exists(backup_path):
-                # Calculate size
-                total_size = 0
-                for dirpath, dirnames, filenames in os.walk(backup_path):
-                    for f in filenames:
-                        fp = os.path.join(dirpath, f)
-                        total_size += os.path.getsize(fp)
-                backup_info["size"] = total_size
-                backup_info["size_str"] = self._format_size(total_size)
-
-                # Check what's in the backup
-                has_client = os.path.exists(os.path.join(backup_path, "client"))
-                has_server = os.path.exists(os.path.join(backup_path, "server"))
-                backup_info["has_client"] = has_client
-                backup_info["has_server"] = has_server
+                if any(key not in backup_info for key in ("size", "size_str", "has_client", "has_server")):
+                    backup_info.update(self._calculate_backup_summary(backup_path))
+                    meta_changed = True
 
                 backups.append(backup_info)
+
+        if meta_changed:
+            self._save_backup_meta(meta)
 
         # Sort by creation date, newest first
         backups.sort(key=lambda x: x.get("created", ""), reverse=True)
@@ -294,4 +305,3 @@ class BackupManager:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024
         return f"{size_bytes:.1f} TB"
-
