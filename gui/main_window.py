@@ -35,7 +35,7 @@ except ImportError:
 class MainWindow:
     """Main application window"""
 
-    TITLE = "GTNH 私货安装器 v1.1"
+    TITLE = "GTNH 私货安装器 v1.1.1"
 
     def __init__(self):
         # Use TkinterDnD.Tk() if available, otherwise fallback to tk.Tk()
@@ -367,12 +367,21 @@ class MainWindow:
         folder = FolderSelectDialog.select_minecraft_folder(self.root)
         if folder:
             self.server_path_var.set(folder)
-            if self.installer:
-                self.installer.set_server_path(folder)
-            if self.backup_manager:
-                self.backup_manager.set_server_path(folder)
+            self._apply_server_path_from_entry()
             self._save_config()
             logger.info(f"服务端路径已设置: {folder}")
+
+    def _apply_server_path_from_entry(self) -> bool:
+        """Apply the currently entered server path to initialized components."""
+        server_path = self.server_path_var.get().strip()
+        if not server_path or not os.path.exists(server_path):
+            return False
+
+        if self.installer:
+            self.installer.set_server_path(server_path)
+        if self.backup_manager:
+            self.backup_manager.set_server_path(server_path)
+        return True
 
     def _set_client_path(self, path: str):
         """Set the client .minecraft path and initialize components"""
@@ -389,6 +398,7 @@ class MainWindow:
         # Initialize components
         self.installer = Installer(self.mc_path)
         self.backup_manager = BackupManager(path)
+        self._apply_server_path_from_entry()
 
         # Refresh versions and load resources
         self._refresh_versions()
@@ -559,6 +569,8 @@ class MainWindow:
             messagebox.showwarning("警告", "请先选择 .minecraft 文件夹")
             return
 
+        self._apply_server_path_from_entry()
+
         # Determine backup type
         has_server = self.installer.server_mc_path is not None if self.installer else False
 
@@ -606,6 +618,7 @@ class MainWindow:
             messagebox.showwarning("警告", "请先选择 .minecraft 文件夹")
             return
 
+        self._apply_server_path_from_entry()
         has_server = self.installer.server_mc_path is not None if self.installer else False
         BackupDialog(self.root, self.backup_manager, has_server, on_restore_callback=self._load_all_resources)
 

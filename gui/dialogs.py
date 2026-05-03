@@ -263,6 +263,8 @@ class BackupDialog(tk.Toplevel):
 class AboutDialog(tk.Toplevel):
     """About dialog"""
 
+    VERSION_TEXT = "版本 1.1.1"
+
     def __init__(self, parent):
         super().__init__(parent)
         self.title("关于")
@@ -276,7 +278,7 @@ class AboutDialog(tk.Toplevel):
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(main_frame, text="GTNH 私货安装器", font=('Arial', 14, 'bold')).pack()
-        ttk.Label(main_frame, text="版本 1.1").pack(pady=5)
+        ttk.Label(main_frame, text=self.VERSION_TEXT).pack(pady=5)
         ttk.Label(main_frame, text="为 GTNH 整合包安装额外模组、脚本和配置文件").pack(pady=10)
         ttk.Label(main_frame, text="工作室 Andgatech").pack(pady=2)
         ttk.Label(main_frame, text="© 2026").pack()

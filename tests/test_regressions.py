@@ -8,11 +8,31 @@ from pathlib import Path
 from core.backup import BackupManager
 from core.installer import Installer, ResourceType
 from core.minecraft import MinecraftPath
-from gui.dialogs import BackupDialog
+from gui.dialogs import AboutDialog, BackupDialog
+from gui.main_window import MainWindow
 from gui.resource_editor import ResourceEditorDialog
 from utils.helpers import ensure_content_version_directories
 
 TEST_TMP_ROOT = Path(tempfile.gettempdir()) / "gtnh_mod_installer_tests"
+
+
+class FakeStringVar:
+    def __init__(self, value=""):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class FakeStatusBar:
+    def __init__(self):
+        self.status = ""
+
+    def set_status(self, status):
+        self.status = status
 
 
 class InstallerRegressionTests(unittest.TestCase):
@@ -215,6 +235,35 @@ class BackupRegressionTests(unittest.TestCase):
         self.assertFalse(saved_backup["has_server"])
 
 
+class MainWindowPathRegressionTests(unittest.TestCase):
+    def setUp(self):
+        temp_root = TEST_TMP_ROOT
+        temp_root.mkdir(exist_ok=True)
+        self.temp_dir = os.path.join(temp_root, self.id().replace(".", "_"))
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        os.makedirs(self.temp_dir)
+        self.client_dir = os.path.join(self.temp_dir, "client")
+        self.server_dir = os.path.join(self.temp_dir, "server")
+        os.makedirs(self.client_dir)
+        os.makedirs(self.server_dir)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_set_client_path_preserves_existing_server_path_for_backups(self):
+        window = MainWindow.__new__(MainWindow)
+        window.client_path_var = FakeStringVar()
+        window.server_path_var = FakeStringVar(self.server_dir)
+        window.status_bar = FakeStatusBar()
+        window._refresh_versions = lambda: None
+
+        MainWindow._set_client_path(window, self.client_dir)
+
+        self.assertIsNotNone(window.installer.server_mc_path)
+        self.assertEqual(window.installer.server_mc_path.mc_path, self.server_dir)
+        self.assertEqual(window.backup_manager.server_path, self.server_dir)
+
+
 class ContentDirectoryRegressionTests(unittest.TestCase):
     def setUp(self):
         temp_root = TEST_TMP_ROOT
@@ -256,6 +305,10 @@ class ContentDirectoryRegressionTests(unittest.TestCase):
 
 
 class DialogFormattingRegressionTests(unittest.TestCase):
+    def test_application_display_version_is_current_release(self):
+        self.assertEqual(MainWindow.TITLE, "GTNH 私货安装器 v1.1.1")
+        self.assertEqual(AboutDialog.VERSION_TEXT, "版本 1.1.1")
+
     def test_backup_row_values_formats_backup_type_and_timestamp(self):
         values = BackupDialog._backup_row_values(
             {
