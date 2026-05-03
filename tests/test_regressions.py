@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.backup import BackupManager
 from core.installer import Installer, ResourceType
@@ -262,6 +263,42 @@ class MainWindowPathRegressionTests(unittest.TestCase):
         self.assertIsNotNone(window.installer.server_mc_path)
         self.assertEqual(window.installer.server_mc_path.mc_path, self.server_dir)
         self.assertEqual(window.backup_manager.server_path, self.server_dir)
+
+    def test_load_config_persists_cleared_missing_paths(self):
+        config_path = os.path.join(self.temp_dir, "config.json")
+        missing_client = os.path.join(self.temp_dir, "missing-client")
+        missing_server = os.path.join(self.temp_dir, "missing-server")
+        with open(config_path, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "client_path": missing_client,
+                    "server_path": missing_server,
+                    "last_version": "2.7.X",
+                },
+                fh,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        window = MainWindow.__new__(MainWindow)
+        window.client_path_var = FakeStringVar()
+        window.server_path_var = FakeStringVar()
+        window.version_var = FakeStringVar()
+        window.installer = None
+
+        with (
+            patch("gui.main_window.get_app_dir", return_value=self.temp_dir),
+            patch("gui.main_window.messagebox.showwarning") as showwarning,
+        ):
+            MainWindow._load_config(window)
+
+        with open(config_path, "r", encoding="utf-8") as fh:
+            saved_config = json.load(fh)
+
+        self.assertEqual(saved_config["client_path"], "")
+        self.assertEqual(saved_config["server_path"], "")
+        self.assertEqual(saved_config["last_version"], "2.7.X")
+        showwarning.assert_called_once()
 
 
 class ContentDirectoryRegressionTests(unittest.TestCase):

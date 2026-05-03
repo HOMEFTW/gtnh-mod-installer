@@ -286,12 +286,14 @@ class MainWindow:
         config = load_json(config_path)
         if config:
             missing_paths = []
+            config_changed = False
             if 'client_path' in config and config['client_path']:
                 if os.path.exists(config['client_path']):
                     self.client_path_var.set(config['client_path'])
                     self._set_client_path(config['client_path'])
                 else:
                     self.client_path_var.set('')
+                    config_changed = True
                     missing_paths.append(f"客户端路径: {config['client_path']}")
             if 'server_path' in config and config['server_path']:
                 if os.path.exists(config['server_path']):
@@ -302,12 +304,15 @@ class MainWindow:
                         self.backup_manager.set_server_path(config['server_path'])
                 else:
                     self.server_path_var.set('')
+                    config_changed = True
                     missing_paths.append(f"服务端路径: {config['server_path']}")
             if missing_paths:
                 messagebox.showwarning("路径不存在", "以下路径不存在，已清除:\n\n" + "\n".join(missing_paths))
             if 'last_version' in config:
                 self.version_var.set(config['last_version'])
                 self._on_version_changed(None)
+            if config_changed:
+                self._save_config()
 
     def _save_config(self):
         """Save current config"""
