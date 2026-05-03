@@ -13,20 +13,15 @@ if not exist ".build-venv\Scripts\python.exe" (
     .build-venv\Scripts\pip.exe install requests py7zr tkinterdnd2 Pillow pyinstaller
 )
 
-REM Check UPX
-set UPX_DIR=
-if exist "tools\upx-5.1.1-win64\upx.exe" (
-    set UPX_DIR=--upx-dir tools\upx-5.1.1-win64
-    echo UPX 压缩已启用
-) else (
-    echo 注意: UPX 未安装，跳过压缩 ^(可选优化^)
-)
+REM UPX is intentionally disabled.
+REM The v1.1.1 UPX-compressed executable crashed on startup with an invalid memory access.
+echo UPX 压缩已禁用，避免启动时内存访问错误
 
 echo 正在打包程序...
 echo.
 
 REM Build with PyInstaller in venv
-.build-venv\Scripts\python.exe -m PyInstaller build.spec --clean %UPX_DIR%
+.build-venv\Scripts\python.exe -m PyInstaller build.spec --clean
 
 echo.
 if exist "dist\GTNH私货安装器.exe" (
