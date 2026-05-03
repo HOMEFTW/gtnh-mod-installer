@@ -263,7 +263,7 @@ class BackupDialog(tk.Toplevel):
 class AboutDialog(tk.Toplevel):
     """About dialog"""
 
-    VERSION_TEXT = "版本 1.1.1"
+    VERSION_TEXT = "版本 1.2.0"
 
     def __init__(self, parent):
         super().__init__(parent)

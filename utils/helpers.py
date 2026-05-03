@@ -7,7 +7,7 @@ import shutil
 import sys
 from typing import Any, Dict, Optional
 
-CONTENT_SUBDIRS = ("scripts", "resourcepacks", "mods", "fonts", "configs")
+CONTENT_SUBDIRS = ("scripts", "resourcepacks", "shaderpacks", "serverutilities", "mods", "fonts", "configs")
 
 
 def load_json(file_path: str) -> Optional[Dict[str, Any]]:
@@ -105,4 +105,3 @@ def init_external_content():
 
     ensure_content_version_directories(external_dir)
     return external_dir
-

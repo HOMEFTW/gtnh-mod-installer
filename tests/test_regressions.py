@@ -69,7 +69,42 @@ class InstallerRegressionTests(unittest.TestCase):
             fh.write("demo")
 
         resources_path = os.path.join(self.content_dir, "resources.json")
-        data = {"mods": [], "scripts": [], "configs": [], "fonts": [], "resourcepacks": []}
+        data = {
+            "mods": [],
+            "scripts": [],
+            "configs": [],
+            "fonts": [],
+            "resourcepacks": [],
+            "shaderpacks": [],
+            "serverutilities": [],
+        }
+        if os.path.exists(resources_path):
+            with open(resources_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        data[type_key].append(metadata)
+        with open(resources_path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+
+    def _write_resource_dir(self, type_key, dirname, files, metadata):
+        type_dir = os.path.join(self.content_dir, type_key)
+        resource_dir = os.path.join(type_dir, dirname)
+        os.makedirs(resource_dir, exist_ok=True)
+        for rel_path, content in files.items():
+            file_path = os.path.join(resource_dir, rel_path)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+
+        resources_path = os.path.join(self.content_dir, "resources.json")
+        data = {
+            "mods": [],
+            "scripts": [],
+            "configs": [],
+            "fonts": [],
+            "resourcepacks": [],
+            "shaderpacks": [],
+            "serverutilities": [],
+        }
         if os.path.exists(resources_path):
             with open(resources_path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -91,6 +126,82 @@ class InstallerRegressionTests(unittest.TestCase):
         self.assertIn("无法安装", message)
         self.assertFalse(os.path.exists(os.path.join(self.client_dir, "fonts", "demo.ttf")))
         self.assertFalse(os.path.exists(os.path.join(self.server_dir, "fonts", "demo.ttf")))
+
+    def test_shaderpack_installs_to_client_shaderpacks_directory_only(self):
+        self._write_resource(
+            "shaderpacks",
+            "demo-shader.zip",
+            {"id": "shader-demo", "name": "Demo Shader", "filename": "demo-shader.zip"},
+        )
+
+        resource = self.installer.get_resource_by_id("shader-demo", ResourceType("shaderpacks"))
+        success, message = self.installer.install_resource(resource, install_side="both")
+
+        self.assertTrue(success, message)
+        self.assertTrue(os.path.exists(os.path.join(self.client_dir, "shaderpacks", "demo-shader.zip")))
+        self.assertFalse(os.path.exists(os.path.join(self.server_dir, "shaderpacks", "demo-shader.zip")))
+        self.assertIn("shader-demo", self.installer.get_installed_resources(ResourceType("shaderpacks"), "client"))
+        self.assertNotIn("shader-demo", self.installer.get_installed_resources(ResourceType("shaderpacks"), "server"))
+
+    def test_server_only_shaderpack_install_reports_failure_when_nothing_can_be_installed(self):
+        self._write_resource(
+            "shaderpacks",
+            "server-only-shader.zip",
+            {"id": "shader-server-only", "name": "Server Only Shader", "filename": "server-only-shader.zip"},
+        )
+
+        resource = self.installer.get_resource_by_id("shader-server-only", ResourceType("shaderpacks"))
+        success, message = self.installer.install_resource(resource, install_side="server")
+
+        self.assertFalse(success)
+        self.assertIn("无法安装", message)
+        self.assertFalse(os.path.exists(os.path.join(self.client_dir, "shaderpacks", "server-only-shader.zip")))
+        self.assertFalse(os.path.exists(os.path.join(self.server_dir, "shaderpacks", "server-only-shader.zip")))
+
+    def test_serverutilities_installs_resource_folder_to_client_and_server_by_default(self):
+        self._write_resource_dir(
+            "serverutilities",
+            "admin-kit",
+            {
+                "permissions.txt": "new permissions",
+                os.path.join("ranks", "admin.txt"): "admin rank",
+            },
+            {"id": "admin-kit", "name": "Admin Kit", "filename": "admin-kit"},
+        )
+        for base_dir in (self.client_dir, self.server_dir):
+            existing_dir = os.path.join(base_dir, "serverutilities", "admin-kit")
+            os.makedirs(existing_dir, exist_ok=True)
+            with open(os.path.join(existing_dir, "permissions.txt"), "w", encoding="utf-8") as fh:
+                fh.write("old permissions")
+
+        resource = self.installer.get_resource_by_id("admin-kit", ResourceType("serverutilities"))
+        success, message = self.installer.install_resource(resource, install_side="both")
+
+        self.assertTrue(success, message)
+        for base_dir in (self.client_dir, self.server_dir):
+            installed_dir = os.path.join(base_dir, "serverutilities", "admin-kit")
+            self.assertTrue(os.path.isdir(installed_dir))
+            with open(os.path.join(installed_dir, "permissions.txt"), "r", encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), "new permissions")
+            with open(os.path.join(installed_dir, "ranks", "admin.txt"), "r", encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), "admin rank")
+        self.assertIn("admin-kit", self.installer.get_installed_resources(ResourceType("serverutilities"), "client"))
+        self.assertIn("admin-kit", self.installer.get_installed_resources(ResourceType("serverutilities"), "server"))
+
+    def test_serverutilities_loads_directories_as_resources_and_ignores_loose_files(self):
+        self._write_resource_dir(
+            "serverutilities",
+            "folder-resource",
+            {"config.json": "{}"},
+            {"id": "folder-resource", "name": "Folder Resource", "filename": "folder-resource"},
+        )
+        loose_file = os.path.join(self.content_dir, "serverutilities", "loose-file.txt")
+        with open(loose_file, "w", encoding="utf-8") as fh:
+            fh.write("ignore")
+
+        resources = self.installer.load_resources(ResourceType("serverutilities"))
+
+        self.assertEqual([resource.id for resource in resources], ["folder-resource"])
 
     def test_installed_resources_include_entries_missing_from_current_content(self):
         installed_path = os.path.join(self.client_dir, "gtnh_installer_data", "installed.json")
@@ -321,7 +432,7 @@ class ContentDirectoryRegressionTests(unittest.TestCase):
 
         ensure_content_version_directories(self.content_dir)
 
-        for folder_name in ("scripts", "resourcepacks", "mods", "fonts", "configs"):
+        for folder_name in ("scripts", "resourcepacks", "shaderpacks", "serverutilities", "mods", "fonts", "configs"):
             self.assertTrue(
                 os.path.isdir(os.path.join(version_dir, folder_name)),
                 f"missing expected folder: {folder_name}",
@@ -338,13 +449,16 @@ class ContentDirectoryRegressionTests(unittest.TestCase):
             item for item in os.listdir(version_dir)
             if os.path.isdir(os.path.join(version_dir, item))
         )
-        self.assertEqual(folder_names, ["configs", "fonts", "mods", "resourcepacks", "scripts"])
+        self.assertEqual(
+            folder_names,
+            ["configs", "fonts", "mods", "resourcepacks", "scripts", "serverutilities", "shaderpacks"],
+        )
 
 
 class DialogFormattingRegressionTests(unittest.TestCase):
     def test_application_display_version_is_current_release(self):
-        self.assertEqual(MainWindow.TITLE, "GTNH 私货安装器 v1.1.1")
-        self.assertEqual(AboutDialog.VERSION_TEXT, "版本 1.1.1")
+        self.assertEqual(MainWindow.TITLE, "GTNH 私货安装器 v1.2.0")
+        self.assertEqual(AboutDialog.VERSION_TEXT, "版本 1.2.0")
 
     def test_backup_row_values_formats_backup_type_and_timestamp(self):
         values = BackupDialog._backup_row_values(
@@ -411,6 +525,16 @@ class DialogFormattingRegressionTests(unittest.TestCase):
         self.assertEqual(normalized["scripts"], [])
         self.assertEqual(normalized["configs"], [])
         self.assertEqual(normalized["resourcepacks"], [])
+        self.assertEqual(normalized["shaderpacks"], [])
+        self.assertEqual(normalized["serverutilities"], [])
+
+    def test_main_window_resource_tabs_include_shaderpacks_before_installed_tab(self):
+        tab_labels = [label for _attr, label, _res_type in MainWindow.RESOURCE_TABS]
+        tab_types = [res_type for _attr, _label, res_type in MainWindow.RESOURCE_TABS]
+
+        self.assertEqual(tab_labels[-3:], ["光影包", "ServerUtilities", "已安装"])
+        self.assertIn(ResourceType("shaderpacks"), tab_types)
+        self.assertIn(ResourceType("serverutilities"), tab_types)
 
 
 if __name__ == "__main__":

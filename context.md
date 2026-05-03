@@ -3,7 +3,7 @@
 
 
 ## 项目概述
-一个带GUI界面的应用程序，用于为GTNH（GregTech New Horizons）Minecraft整合包安装额外的模组、脚本、配置文件、字体和资源包。支持客户端和服务端分别管理。由工作室 Andgatech 开发。
+一个带GUI界面的应用程序，用于为GTNH（GregTech New Horizons）Minecraft整合包安装额外的模组、脚本、配置文件、字体、资源包、光影包和 ServerUtilities 资源。支持客户端和服务端分别管理。由工作室 Andgatech 开发。
 
 ## 技术栈
 - **语言**: Python 3.14
@@ -31,6 +31,8 @@ gtnh-mod-installer/
 │   │   ├── configs/        # 支持文件夹和单个文件（仅一级）
 │   │   ├── fonts/
 │   │   ├── resourcepacks/
+│   │   ├── shaderpacks/
+│   │   ├── serverutilities/
 │   │   └── resources.json  # 资源元数据
 │   └── 2.8.X/
 │       └── ...（同上）
@@ -68,6 +70,8 @@ gtnh-mod-installer/
 - 配置 (configs)
 - 字体 (fonts)
 - 资源包 (resourcepacks)
+- 光影包 (shaderpacks)
+- ServerUtilities (serverutilities)
 - 已安装（显示名称和安装状态：客户端/服务端已安装）
 
 ### 4. 资源列表显示
@@ -91,6 +95,8 @@ gtnh-mod-installer/
 - **配置 (configs)**：始终双端安装，递归合并复制
 - **字体 (fonts)**：仅客户端安装，复制到 `fonts/` 和 `fontfiles/` 两个目录（自动创建）
 - **资源包 (resourcepacks)**：仅客户端安装
+- **光影包 (shaderpacks)**：仅客户端安装，复制到 `shaderpacks/` 目录
+- **ServerUtilities (serverutilities)**：默认客户端和服务端同时安装，读取 `Addcontent/{版本}/serverutilities/` 下的子文件夹作为资源，复制整个文件夹到目标端的 `serverutilities/` 目录，同名文件覆盖
 
 ### 7. 配置文件 (configs) 特殊处理
 - Addcontent 中 configs 目录读取**一级子项**（文件或文件夹），不读取更深层级
@@ -181,7 +187,9 @@ gtnh-mod-installer/
   "scripts": [],
   "configs": [],
   "fonts": [],
-  "resourcepacks": []
+  "resourcepacks": [],
+  "shaderpacks": [],
+  "serverutilities": []
 }
 ```
 
@@ -196,7 +204,9 @@ gtnh-mod-installer/
     "config-id": ["path/to/file1.cfg", "path/to/file2.cfg"]
   },
   "fonts": [],
-  "resourcepacks": []
+  "resourcepacks": [],
+  "shaderpacks": [],
+  "serverutilities": []
 }
 ```
 
@@ -211,7 +221,9 @@ gtnh-mod-installer/
     "scripts": ["script_id_1"],
     "configs": [],
     "fonts": [],
-    "resourcepacks": []
+    "resourcepacks": [],
+    "shaderpacks": [],
+    "serverutilities": []
   }
 }
 ```
@@ -219,7 +231,8 @@ gtnh-mod-installer/
 ## 关键设计决策
 - **双 installed.json**：客户端和服务端各自维护独立的 installed.json，备份还原时随各自文件夹走，彻底解决服务端还原后状态不同步问题
 - **server_required 最高优先级**：模组的 server_required 字段无论用户选双端还是仅服务端都生效
-- **字体/资源包服务端拦截**：仅选服务端安装且全部为字体/资源包时弹窗阻止
+- **ServerUtilities 文件夹资源**：serverutilities 类型只读取子文件夹；安装时合并复制整个文件夹，同名文件覆盖
+- **字体/资源包/光影包服务端拦截**：仅选服务端安装且全部为字体/资源包/光影包时弹窗阻止
 - **配置递归合并而非覆盖**：configs 安装采用合并复制（不删除客户端原有配置），卸载时根据跟踪的文件列表精确删除
 - **字体双目录安装**：GTNH 客户端使用 fonts/ 和 fontfiles/ 两个目录存放字体
 - **_original_filename 模式**：资源编辑器跟踪原始文件名用于重命名，避免新资源首次保存时产生重复元数据
@@ -258,7 +271,7 @@ dist/GTNH私货安装器.exe
 - [x] 拖放文件支持（tkinterdnd2）
 - [x] PyInstaller 打包支持
 - [x] Addcontent 外置（首次运行自动解压）
-- [x] 资源类型安装规则（mods按元数据，scripts/configs双端，fonts/resourcepacks仅客户端）
+- [x] 资源类型安装规则（mods按元数据，scripts/configs/serverutilities双端，fonts/resourcepacks/shaderpacks仅客户端）
 - [x] 配置文件递归合并安装+文件跟踪卸载
 - [x] 配置文件一级目录读取
 - [x] 字体双目录安装（fonts/ + fontfiles/）
@@ -273,11 +286,11 @@ dist/GTNH私货安装器.exe
 - [x] 双 installed.json（客户端和服务端各自独立）
 - [x] server_required 始终为最高优先级
 - [x] 启动时路径存在性检测
-- [x] 字体/资源包仅服务端安装拦截提示
+- [x] 字体/资源包/光影包仅服务端安装拦截提示
 - [x] 清单生成开关（文件菜单勾选项）
 
 ## v1.1 更新内容
-- 新增 `Addcontent/{版本}` 目录自动初始化机制。程序启动、刷新版本、切换版本时，会自动补齐 `scripts`、`resourcepacks`、`mods`、`fonts`、`configs` 五个子目录。
+- 新增 `Addcontent/{版本}` 目录自动初始化机制。程序启动、刷新版本、切换版本时，会自动补齐 `scripts`、`resourcepacks`、`shaderpacks`、`serverutilities`、`mods`、`fonts`、`configs` 七个子目录。
 - 修复“仅服务端安装”在没有可安装目标时仍返回成功的问题，现在会明确提示失败，避免假成功。
 - 修复空内容备份时的清理异常。现在会正确返回“没有可备份的内容”，不会因为残留临时目录报错。
 - 改进已安装资源管理逻辑。即使资源已经不在当前版本 `Addcontent` 清单中，已安装页仍会显示该条目，并支持按安装记录精确卸载。

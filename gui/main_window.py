@@ -35,7 +35,18 @@ except ImportError:
 class MainWindow:
     """Main application window"""
 
-    TITLE = "GTNH 私货安装器 v1.1.1"
+    TITLE = "GTNH 私货安装器 v1.2.0"
+    RESOURCE_TABS = [
+        ("mod", "模组", ResourceType.MOD),
+        ("script", "脚本", ResourceType.SCRIPT),
+        ("config", "配置", ResourceType.CONFIG),
+        ("font", "字体", ResourceType.FONT),
+        ("resourcepack", "资源包", ResourceType.RESOURCEPACK),
+        ("shaderpack", "光影包", ResourceType.SHADERPACK),
+        ("serverutilities", "ServerUtilities", ResourceType.SERVERUTILITIES),
+        ("installed", "已安装", None),
+    ]
+    CLIENT_ONLY_TYPES = {ResourceType.FONT, ResourceType.RESOURCEPACK, ResourceType.SHADERPACK}
 
     def __init__(self):
         # Use TkinterDnD.Tk() if available, otherwise fallback to tk.Tk()
@@ -160,6 +171,8 @@ class MainWindow:
         self.config_frame = ttk.Frame(self.notebook)
         self.font_frame = ttk.Frame(self.notebook)
         self.resourcepack_frame = ttk.Frame(self.notebook)
+        self.shaderpack_frame = ttk.Frame(self.notebook)
+        self.serverutilities_frame = ttk.Frame(self.notebook)
         self.installed_frame = ttk.Frame(self.notebook)
 
         self.notebook.add(self.mod_frame, text="模组")
@@ -167,6 +180,8 @@ class MainWindow:
         self.notebook.add(self.config_frame, text="配置")
         self.notebook.add(self.font_frame, text="字体")
         self.notebook.add(self.resourcepack_frame, text="资源包")
+        self.notebook.add(self.shaderpack_frame, text="光影包")
+        self.notebook.add(self.serverutilities_frame, text="ServerUtilities")
         self.notebook.add(self.installed_frame, text="已安装")
 
         # Resource list frames for each tab
@@ -209,6 +224,22 @@ class MainWindow:
             on_right_click=self._show_context_menu
         )
         self.resourcepack_list.pack(fill=tk.BOTH, expand=True)
+
+        self.shaderpack_list = ResourceListFrame(
+            self.shaderpack_frame,
+            on_select_callback=self._update_selection_count,
+            on_double_click=self._on_resource_double_click,
+            on_right_click=self._show_context_menu
+        )
+        self.shaderpack_list.pack(fill=tk.BOTH, expand=True)
+
+        self.serverutilities_list = ResourceListFrame(
+            self.serverutilities_frame,
+            on_select_callback=self._update_selection_count,
+            on_double_click=self._on_resource_double_click,
+            on_right_click=self._show_context_menu
+        )
+        self.serverutilities_list.pack(fill=tk.BOTH, expand=True)
 
         # Installed tab - no double-click/right-click callbacks
         self.installed_list = ResourceListFrame(
@@ -441,6 +472,16 @@ class MainWindow:
         resourcepack_data = self._prepare_resource_data(resourcepacks, ResourceType.RESOURCEPACK)
         self.resourcepack_list.set_resources(resourcepack_data)
 
+        # Load shaderpacks
+        shaderpacks = self.installer.load_resources(ResourceType.SHADERPACK)
+        shaderpack_data = self._prepare_resource_data(shaderpacks, ResourceType.SHADERPACK)
+        self.shaderpack_list.set_resources(shaderpack_data)
+
+        # Load serverutilities
+        serverutilities = self.installer.load_resources(ResourceType.SERVERUTILITIES)
+        serverutilities_data = self._prepare_resource_data(serverutilities, ResourceType.SERVERUTILITIES)
+        self.serverutilities_list.set_resources(serverutilities_data)
+
         # Load installed
         self._load_installed_resources()
 
@@ -472,11 +513,11 @@ class MainWindow:
 
             # Determine server_required display
             # MODs: use field from metadata
-            # SCRIPTs, CONFIGs: always show as required
-            # FONTs, RESOURCEPACKs: always show as not required
+            # SCRIPTs, CONFIGs, SERVERUTILITIES: always show as required
+            # FONTs, RESOURCEPACKs, SHADERPACKs: always show as not required
             if resource_type == ResourceType.MOD:
                 server_required = res.server_required
-            elif resource_type in [ResourceType.SCRIPT, ResourceType.CONFIG]:
+            elif resource_type in [ResourceType.SCRIPT, ResourceType.CONFIG, ResourceType.SERVERUTILITIES]:
                 server_required = True
             else:
                 server_required = False
@@ -544,15 +585,19 @@ class MainWindow:
     def _get_current_list(self) -> ResourceListFrame:
         """Get the currently visible resource list"""
         tab_idx = self.notebook.index(self.notebook.select())
-        lists = [self.mod_list, self.script_list, self.config_list,
-                 self.font_list, self.resourcepack_list, self.installed_list]
+        lists = [
+            getattr(self, f"{attr}_list")
+            for attr, _label, _res_type in self.RESOURCE_TABS
+        ]
         return lists[tab_idx] if tab_idx < len(lists) else self.mod_list
 
     def _get_current_resource_type(self) -> ResourceType:
         """Get resource type for current tab"""
         tab_idx = self.notebook.index(self.notebook.select())
-        types = [ResourceType.MOD, ResourceType.SCRIPT, ResourceType.CONFIG,
-                 ResourceType.FONT, ResourceType.RESOURCEPACK, ResourceType.MOD]
+        types = [
+            res_type or ResourceType.MOD
+            for _attr, _label, res_type in self.RESOURCE_TABS
+        ]
         return types[tab_idx] if tab_idx < len(types) else ResourceType.MOD
 
     def _select_all(self):
@@ -635,13 +680,10 @@ class MainWindow:
 
         # Collect selections from all tabs
         all_selected = []
-        for res_list, res_type in [
-            (self.mod_list, ResourceType.MOD),
-            (self.script_list, ResourceType.SCRIPT),
-            (self.config_list, ResourceType.CONFIG),
-            (self.font_list, ResourceType.FONT),
-            (self.resourcepack_list, ResourceType.RESOURCEPACK)
-        ]:
+        for attr, _label, res_type in self.RESOURCE_TABS:
+            if res_type is None:
+                continue
+            res_list = getattr(self, f"{attr}_list")
             for res_id in res_list.get_selected_ids():
                 all_selected.append((res_id, res_type))
 
@@ -654,14 +696,14 @@ class MainWindow:
         if not install_side:
             return
 
-        # Check if all selected are server-incompatible types (fonts/resourcepacks)
+        # Check if all selected are server-incompatible types (fonts/resourcepacks/shaderpacks)
         if install_side == "server":
             server_incompatible = all(
-                res_type in [ResourceType.FONT, ResourceType.RESOURCEPACK]
+                res_type in self.CLIENT_ONLY_TYPES
                 for _, res_type in all_selected
             )
             if server_incompatible:
-                messagebox.showwarning("提示", "字体和资源包无法安装在服务端")
+                messagebox.showwarning("提示", "字体、资源包和光影包无法安装在服务端")
                 return
 
         # Confirm
@@ -738,7 +780,9 @@ class MainWindow:
                 "scripts": [],
                 "configs": [],
                 "fonts": [],
-                "resourcepacks": []
+                "resourcepacks": [],
+                "shaderpacks": [],
+                "serverutilities": []
             }
         }
 
@@ -849,9 +893,9 @@ class MainWindow:
 
         # Try to uninstall as each type
         success_count = 0
+        resource_types = [res_type for _attr, _label, res_type in self.RESOURCE_TABS if res_type]
         for res_id in selected:
-            for res_type in [ResourceType.MOD, ResourceType.SCRIPT, ResourceType.CONFIG,
-                             ResourceType.FONT, ResourceType.RESOURCEPACK]:
+            for res_type in resource_types:
                 success, _ = self.installer.uninstall_resource(res_id, res_type)
                 if success:
                     success_count += 1

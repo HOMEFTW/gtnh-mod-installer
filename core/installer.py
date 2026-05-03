@@ -19,6 +19,8 @@ class ResourceType(Enum):
     CONFIG = "configs"
     FONT = "fonts"
     RESOURCEPACK = "resourcepacks"
+    SHADERPACK = "shaderpacks"
+    SERVERUTILITIES = "serverutilities"
 
 
 @dataclass
@@ -36,8 +38,8 @@ class Resource:
     server_required: bool = False  # For mods: whether server install is needed
     # Note: Server installation rules:
     # MOD -> depends on server_required field
-    # SCRIPT, CONFIG -> always install on both client and server
-    # FONT, RESOURCEPACK -> client only
+    # SCRIPT, CONFIG, SERVERUTILITIES -> always install on both client and server
+    # FONT, RESOURCEPACK, SHADERPACK -> client only
 
 
 class Installer:
@@ -95,7 +97,9 @@ class Installer:
             "scripts": [],
             "configs": [],
             "fonts": [],
-            "resourcepacks": []
+            "resourcepacks": [],
+            "shaderpacks": [],
+            "serverutilities": []
         }
 
     @staticmethod
@@ -210,6 +214,9 @@ class Installer:
             # Get info from JSON by filename
             info = resource_info.get(item, {})
 
+            if resource_type == ResourceType.SERVERUTILITIES and not os.path.isdir(item_path):
+                continue
+
             if os.path.isfile(item_path):
                 resource = Resource(
                     id=info.get("id", item),
@@ -280,6 +287,10 @@ class Installer:
             return target.get_fonts_path()
         elif resource_type == ResourceType.RESOURCEPACK:
             return target.get_resourcepacks_path()
+        elif resource_type == ResourceType.SHADERPACK:
+            return target.get_shaderpacks_path()
+        elif resource_type == ResourceType.SERVERUTILITIES:
+            return target.get_serverutilities_path()
         return None
 
     def _copy_resource(self, source_path: str, dest_dir: str, filename: str) -> Tuple[bool, str]:
@@ -307,6 +318,21 @@ class Installer:
 
         except Exception as e:
             return False, f"复制失败: {str(e)}"
+
+    def _copy_directory_merge(self, source_path: str, dest_dir: str, dirname: str) -> Tuple[bool, str]:
+        """Copy a directory resource and overwrite same-name files."""
+        if not os.path.isdir(source_path):
+            return False, f"源文件夹不存在: {source_path}"
+
+        os.makedirs(dest_dir, exist_ok=True)
+        dest_path = os.path.join(dest_dir, dirname)
+
+        try:
+            shutil.copytree(source_path, dest_path, dirs_exist_ok=True)
+            logger.info(f"已复制目录: {dirname}")
+            return True, f"已复制目录: {dirname}"
+        except Exception as e:
+            return False, f"复制目录失败: {str(e)}"
 
     def _copy_config_recursive(self, source_path: str, dest_dir: str) -> Tuple[bool, str, List[str]]:
         """Copy config directory contents recursively, merging with existing files.
@@ -392,6 +418,8 @@ class Installer:
                     success2, message2 = self._copy_resource(resource.source_path, fontfiles_dir, resource.filename)
                     if not success2:
                         logger.warning(f"复制到 fontfiles 失败: {message2}")
+            elif resource.resource_type == ResourceType.SERVERUTILITIES:
+                success, message = self._copy_directory_merge(resource.source_path, dest_dir, resource.filename)
             else:
                 success, message = self._copy_resource(resource.source_path, dest_dir, resource.filename)
             if not success:
@@ -412,7 +440,7 @@ class Installer:
         if install_side in ("both", "server") and self.server_mc_path:
             if resource.resource_type == ResourceType.MOD:
                 should_install_server = resource.server_required
-            elif resource.resource_type in [ResourceType.SCRIPT, ResourceType.CONFIG]:
+            elif resource.resource_type in [ResourceType.SCRIPT, ResourceType.CONFIG, ResourceType.SERVERUTILITIES]:
                 should_install_server = True
 
         if should_install_server:
@@ -423,9 +451,14 @@ class Installer:
                         resource.source_path, server_dest_dir
                     )
                 else:
-                    server_success, server_message = self._copy_resource(
-                        resource.source_path, server_dest_dir, resource.filename
-                    )
+                    if resource.resource_type == ResourceType.SERVERUTILITIES:
+                        server_success, server_message = self._copy_directory_merge(
+                            resource.source_path, server_dest_dir, resource.filename
+                        )
+                    else:
+                        server_success, server_message = self._copy_resource(
+                            resource.source_path, server_dest_dir, resource.filename
+                        )
                 if server_success:
                     logger.info(f"已同步到服务端: {resource.filename}")
                     server_installed = self._load_server_installed()

@@ -15,7 +15,7 @@ from utils.logger import logger
 class ResourceEditorDialog(tk.Toplevel):
     """Dialog for editing resource metadata"""
 
-    RESOURCE_TYPES = ['mods', 'scripts', 'configs', 'fonts', 'resourcepacks']
+    RESOURCE_TYPES = ['mods', 'scripts', 'configs', 'fonts', 'resourcepacks', 'shaderpacks', 'serverutilities']
     _versions_cache: Optional[List[str]] = None
     _resources_cache: Dict[str, Dict[str, List[dict]]] = {}
 
@@ -257,19 +257,19 @@ class ResourceEditorDialog(tk.Toplevel):
     def _update_server_install_label(self):
         """Update server install info label based on current type"""
         # Mods: show checkbox for server_required
-        # Scripts, configs: always install on both
-        # Fonts, resourcepacks: client only
+        # Scripts, configs, serverutilities: always install on both
+        # Fonts, resourcepacks, shaderpacks: client only
         if self.current_type == 'mods':
             self.server_install_label.config(text="📁 模组根据\"服务端需装\"选项决定是否安装到服务端")
             # Show checkbox for mods (pack before label)
             self.server_required_check.pack(before=self.server_install_label, anchor=tk.W, pady=5)
-        elif self.current_type in ['scripts', 'configs']:
+        elif self.current_type in ['scripts', 'configs', 'serverutilities']:
             self.server_install_label.config(text="📁 此类型资源会安装到客户端和服务端")
             # Hide checkbox for scripts/configs (always server)
             self.server_required_check.pack_forget()
         else:
             self.server_install_label.config(text="📁 此类型资源仅安装到客户端")
-            # Hide checkbox for fonts/resourcepacks (client only)
+            # Hide checkbox for fonts/resourcepacks/shaderpacks (client only)
             self.server_required_check.pack_forget()
 
     def _load_resources(self):

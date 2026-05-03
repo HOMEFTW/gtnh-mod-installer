@@ -59,6 +59,14 @@ class MinecraftPath:
         """Get resourcepacks directory path"""
         return os.path.join(self.mc_path, 'resourcepacks')
 
+    def get_shaderpacks_path(self) -> str:
+        """Get shaderpacks directory path"""
+        return os.path.join(self.mc_path, 'shaderpacks')
+
+    def get_serverutilities_path(self) -> str:
+        """Get serverutilities directory path"""
+        return os.path.join(self.mc_path, 'serverutilities')
+
     def ensure_directories(self) -> bool:
         """Ensure mods and scripts directories exist, create if missing"""
         dirs = [
@@ -71,4 +79,3 @@ class MinecraftPath:
             return True
         except OSError:
             return False
-
