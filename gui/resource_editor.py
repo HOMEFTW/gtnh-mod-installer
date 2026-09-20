@@ -7,9 +7,13 @@ from typing import Optional, Dict, List
 import os
 import re
 import shutil
+import json
+from copy import deepcopy
 
 from utils.helpers import load_json, save_json, init_external_content
+from gui.theme import dialog_heading
 from utils.logger import logger
+from utils.helpers import atomic_json, json_file_lock, safe_child_path, staged_resource_update
 
 
 class ResourceEditorDialog(tk.Toplevel):
@@ -63,8 +67,9 @@ class ResourceEditorDialog(tk.Toplevel):
         self.grab_set()
         self.update_idletasks()
 
-        width = 700
-        height = 500
+        width = 1000
+        height = 740
+        self.minsize(920, 680)
         x = self.parent.winfo_x() + (self.parent.winfo_width() - width) // 2
         y = self.parent.winfo_y() + (self.parent.winfo_height() - height) // 2
         self.geometry(f"{width}x{height}+{x}+{y}")
@@ -74,8 +79,8 @@ class ResourceEditorDialog(tk.Toplevel):
 
     def _create_widgets(self):
         """Create all widgets"""
-        # Top frame for version selection
-        top_frame = ttk.Frame(self, padding=5)
+        dialog_heading(self, "编辑资源", "维护资源信息与版本，或使用新文件替换当前资源。")
+        top_frame = ttk.Frame(self, padding=(20, 0, 20, 12))
         top_frame.pack(fill=tk.X)
 
         ttk.Label(top_frame, text="版本:").pack(side=tk.LEFT)
@@ -88,7 +93,7 @@ class ResourceEditorDialog(tk.Toplevel):
         ttk.Label(top_frame, textvariable=self.loading_var).pack(side=tk.RIGHT)
 
         # Main content frame (left-right split)
-        content_frame = ttk.Frame(self, padding=5)
+        content_frame = ttk.Frame(self, padding=(20, 0, 20, 20))
         content_frame.pack(fill=tk.BOTH, expand=True)
 
         # Left panel: file list
@@ -103,7 +108,7 @@ class ResourceEditorDialog(tk.Toplevel):
 
     def _create_left_panel(self, parent):
         """Create left panel with file list"""
-        left_frame = ttk.LabelFrame(parent, text="资源列表", padding=5)
+        left_frame = ttk.LabelFrame(parent, text="资源列表", padding=12)
         left_frame.grid(row=0, column=0, sticky=tk.NSEW, padx=(0, 5))
 
         # Type selection
@@ -144,36 +149,36 @@ class ResourceEditorDialog(tk.Toplevel):
         ttk.Label(form_frame, text="ID:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.id_var = tk.StringVar()
         self.id_entry = ttk.Entry(form_frame, textvariable=self.id_var, width=40)
-        self.id_entry.grid(row=0, column=1, sticky=tk.EW, pady=2, padx=(5, 0))
+        self.id_entry.grid(row=0, column=1, sticky=tk.EW, pady=7, padx=(12, 0))
 
         # Filename field
         ttk.Label(form_frame, text="文件名:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.filename_var = tk.StringVar()
         self.filename_entry = ttk.Entry(form_frame, textvariable=self.filename_var, width=40)
-        self.filename_entry.grid(row=1, column=1, sticky=tk.EW, pady=2, padx=(5, 0))
+        self.filename_entry.grid(row=1, column=1, sticky=tk.EW, pady=7, padx=(12, 0))
 
         # Name field
         ttk.Label(form_frame, text="显示名称:").grid(row=2, column=0, sticky=tk.W, pady=2)
         self.name_var = tk.StringVar()
         self.name_entry = ttk.Entry(form_frame, textvariable=self.name_var, width=40)
-        self.name_entry.grid(row=2, column=1, sticky=tk.EW, pady=2, padx=(5, 0))
+        self.name_entry.grid(row=2, column=1, sticky=tk.EW, pady=7, padx=(12, 0))
 
         # Version field
         ttk.Label(form_frame, text="版本:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self.res_version_var = tk.StringVar()
         self.res_version_entry = ttk.Entry(form_frame, textvariable=self.res_version_var, width=40)
-        self.res_version_entry.grid(row=3, column=1, sticky=tk.EW, pady=2, padx=(5, 0))
+        self.res_version_entry.grid(row=3, column=1, sticky=tk.EW, pady=7, padx=(12, 0))
 
         # MC Version field
         ttk.Label(form_frame, text="适配版本:").grid(row=4, column=0, sticky=tk.W, pady=2)
         self.mc_version_var = tk.StringVar()
         self.mc_version_entry = ttk.Entry(form_frame, textvariable=self.mc_version_var, width=40)
-        self.mc_version_entry.grid(row=4, column=1, sticky=tk.EW, pady=2, padx=(5, 0))
+        self.mc_version_entry.grid(row=4, column=1, sticky=tk.EW, pady=7, padx=(12, 0))
 
         # Description field
         ttk.Label(form_frame, text="说明:").grid(row=5, column=0, sticky=tk.NW, pady=2)
         self.desc_text = tk.Text(form_frame, width=40, height=6)
-        self.desc_text.grid(row=5, column=1, sticky=tk.NSEW, pady=2, padx=(5, 0))
+        self.desc_text.grid(row=5, column=1, sticky=tk.NSEW, pady=7, padx=(12, 0))
 
         form_frame.columnconfigure(1, weight=1)
         form_frame.rowconfigure(5, weight=1)
@@ -192,9 +197,9 @@ class ResourceEditorDialog(tk.Toplevel):
         btn_frame = ttk.Frame(right_frame)
         btn_frame.pack(fill=tk.X, pady=10)
 
-        ttk.Button(btn_frame, text="保存", command=self._save_resource).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="保存修改", style="Primary.TButton", command=self._save_resource).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="更新文件", command=self._update_resource_file).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="删除", command=self._delete_resource).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="删除元数据", style="Danger.TButton", command=self._delete_resource).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="取消", command=self._on_close).pack(side=tk.RIGHT, padx=5)
 
     def _load_versions(self):
@@ -278,7 +283,15 @@ class ResourceEditorDialog(tk.Toplevel):
             self.loading_var.set("没有可用版本")
             return
 
-        self.resources_data = self._get_resources_data(self.current_version)
+        # A dialog must not start from another instance's stale in-process cache.
+        path = os.path.join(init_external_content(), self.current_version, 'resources.json')
+        with json_file_lock(path):
+            if os.path.exists(path):
+                with open(path, encoding='utf-8') as stream:
+                    self.resources_data = self._normalize_resources_data(json.load(stream))
+            else:
+                self.resources_data = self._normalize_resources_data({})
+        self._metadata_baseline = deepcopy(self.resources_data)
 
         self._refresh_file_list()
 
@@ -486,22 +499,32 @@ class ResourceEditorDialog(tk.Toplevel):
 
         # Use tracked original filename for rename and lookup
         original_filename = self._original_filename
+        original_data = deepcopy(self.resources_data)
+        renamed = False
         resources = self.resources_data.get(self.current_type, [])
 
         # Rename file on disk if filename changed
         if original_filename and original_filename != new_filename:
             content_dir = init_external_content()
             type_dir = os.path.join(content_dir, self.current_version, self.current_type)
-            old_path = os.path.join(type_dir, original_filename)
-            new_path = os.path.join(type_dir, new_filename)
+            try:
+                old_path = safe_child_path(type_dir, original_filename)
+                new_path = safe_child_path(type_dir, new_filename)
+                if os.path.exists(new_path):
+                    raise ValueError("目标文件已存在，不能覆盖其他资源")
+            except ValueError as exc:
+                messagebox.showerror("保存失败", str(exc), parent=self)
+                return
 
             if os.path.exists(old_path) and not os.path.exists(new_path):
                 try:
                     os.rename(old_path, new_path)
+                    renamed = True
                     logger.info(f"已重命名文件: {original_filename} -> {new_filename}")
                 except Exception as e:
                     logger.error(f"重命名文件失败: {str(e)}")
                     messagebox.showwarning("警告", f"文件重命名失败: {str(e)}", parent=self)
+                    return
 
         # Find and update resource - use original_filename for lookup
         found = False
@@ -520,6 +543,8 @@ class ResourceEditorDialog(tk.Toplevel):
 
         for i, r in enumerate(resources):
             if r.get('filename') == original_filename or r.get('id') == resource_id:
+                if r.get('download'):
+                    resource_data['download'] = dict(r['download'], name=new_filename)
                 resources[i] = resource_data
                 found = True
                 break
@@ -534,7 +559,12 @@ class ResourceEditorDialog(tk.Toplevel):
         self.resources_data[self.current_type] = resources
 
         # Save to file
-        self._save_to_file()
+        if not self._save_to_file():
+            if renamed:
+                os.rename(new_path, old_path)
+            self.resources_data = original_data
+            self._original_filename = original_filename
+            return
 
         # Refresh list
         self._refresh_file_list()
@@ -566,122 +596,46 @@ class ResourceEditorDialog(tk.Toplevel):
         content_dir = init_external_content()
         type_dir = os.path.join(content_dir, self.current_version, self.current_type)
 
-        # Track deleted files for user notification
-        deleted_files = []
-
-        # Delete old file from Addcontent if exists
-        if old_filename:
-            old_file_path = os.path.join(type_dir, old_filename)
-            if os.path.exists(old_file_path):
-                try:
-                    if os.path.isdir(old_file_path):
-                        shutil.rmtree(old_file_path)
-                    else:
-                        os.remove(old_file_path)
-                    logger.info(f"已删除旧资源文件: {old_filename}")
-                except Exception as e:
-                    logger.error(f"删除旧资源文件失败: {str(e)}")
-
-            # Delete old file from client .minecraft
-            if self.client_path:
-                client_type_dir = os.path.join(self.client_path, self.current_type)
-                if client_type_dir and os.path.exists(client_type_dir):
-                    old_client_file = os.path.join(client_type_dir, old_filename)
-                    if os.path.exists(old_client_file):
-                        try:
-                            if os.path.isdir(old_client_file):
-                                shutil.rmtree(old_client_file)
-                            else:
-                                os.remove(old_client_file)
-                            deleted_files.append(f"[客户端] {old_filename}")
-                            logger.info(f"已从客户端卸载: {old_filename}")
-                        except Exception as e:
-                            logger.error(f"从客户端卸载失败: {str(e)}")
-
-            # Delete old file from server .minecraft
-            if self.server_path:
-                server_type_dir = os.path.join(self.server_path, self.current_type)
-                if server_type_dir and os.path.exists(server_type_dir):
-                    old_server_file = os.path.join(server_type_dir, old_filename)
-                    if os.path.exists(old_server_file):
-                        try:
-                            if os.path.isdir(old_server_file):
-                                shutil.rmtree(old_server_file)
-                            else:
-                                os.remove(old_server_file)
-                            deleted_files.append(f"[服务端] {old_filename}")
-                            logger.info(f"已从服务端卸载: {old_filename}")
-                        except Exception as e:
-                            logger.error(f"从服务端卸载失败: {str(e)}")
-
-        # Copy new file
-        new_dest_path = os.path.join(type_dir, new_filename)
+        # Resolve every deletion target within its managed directory.
         try:
-            shutil.copy2(file_path, new_dest_path)
-            logger.info(f"已复制新文件: {new_filename}")
-        except Exception as e:
-            messagebox.showerror("错误", f"复制文件失败: {str(e)}", parent=self)
+            destination = safe_child_path(type_dir, new_filename)
+            old_library = safe_child_path(type_dir, old_filename) if old_filename else None
+            if os.path.exists(destination) and os.path.normcase(destination) != os.path.normcase(old_library or ""):
+                raise ValueError("资源库已有同名新文件，请先处理冲突")
+            remove_paths = [old_library] if old_library else []
+            for game_path in (self.client_path, self.server_path):
+                if game_path and old_filename:
+                    folder = 'config' if self.current_type == 'configs' else self.current_type
+                    remove_paths.append(safe_child_path(os.path.join(game_path, folder), old_filename))
+                    if self.current_type == 'fonts':
+                        remove_paths.append(safe_child_path(os.path.join(game_path, 'fontfiles'), old_filename))
+            # The new file is copied first, even when the selected source is the old file itself.
+            with staged_resource_update(file_path, destination, remove_paths):
+                original_data = deepcopy(self.resources_data)
+                new_version = self._parse_version_from_filename(new_filename)
+                new_mc_version = self._parse_mc_version_from_filename(new_filename)
+                resources = self.resources_data.setdefault(self.current_type, [])
+                entry = next((r for r in resources if r.get('id') == resource_id), None)
+                if entry is None:
+                    entry = {'id': resource_id}
+                    resources.append(entry)
+                entry.update(filename=new_filename, name=self.name_var.get().strip() or new_filename,
+                             version=new_version, mc_version=new_mc_version,
+                             description=self.desc_text.get(1.0, tk.END).strip(),
+                             server_required=self.server_required_var.get())
+                if not self._save_to_file():
+                    self.resources_data = original_data
+                    raise OSError("元数据未保存，已撤销文件更新")
+        except Exception as exc:
+            messagebox.showerror("更新失败", str(exc), parent=self)
             return
 
-        # Parse version from filename
-        new_version = self._parse_version_from_filename(new_filename)
-        new_mc_version = self._parse_mc_version_from_filename(new_filename)
-
-        # Keep id, name, description, server_required; update filename and version
-        saved_id = self.id_var.get().strip()
-        saved_name = self.name_var.get().strip()
-        saved_description = self.desc_text.get(1.0, tk.END).strip()
-        saved_server_required = self.server_required_var.get()
-
-        # Update filename in form
+        self._original_filename = new_filename
         self.filename_var.set(new_filename)
         self.res_version_var.set(new_version)
         self.mc_version_var.set(new_mc_version)
-
-        # Update resources data
-        resources = self.resources_data.get(self.current_type, [])
-        found = False
-
-        for i, r in enumerate(resources):
-            if r.get('id') == saved_id:
-                resources[i] = {
-                    'id': saved_id,
-                    'filename': new_filename,
-                    'name': saved_name or new_filename,
-                    'version': new_version,
-                    'mc_version': new_mc_version,
-                    'description': saved_description,
-                    'server_required': saved_server_required
-                }
-                found = True
-                break
-
-        if not found:
-            # Add new entry
-            resources.append({
-                'id': saved_id,
-                'filename': new_filename,
-                'name': saved_name or new_filename,
-                'version': new_version,
-                'mc_version': new_mc_version,
-                'description': saved_description,
-                'server_required': saved_server_required
-            })
-
-        self.resources_data[self.current_type] = resources
-
-        # Save to file
-        self._save_to_file()
-
-        # Refresh list
         self._refresh_file_list()
-
-        # Build result message
-        msg = f"资源文件已更新\n\n新文件: {new_filename}\n版本: {new_version or '(未检测到)'}\n适配版本: {new_mc_version or '(未检测到)'}"
-        if deleted_files:
-            msg += f"\n\n已卸载旧文件:\n" + "\n".join(deleted_files)
-
-        messagebox.showinfo("成功", msg, parent=self)
+        messagebox.showinfo("成功", f"资源文件已更新: {new_filename}\n请重新安装此资源。", parent=self)
 
     def _parse_version_from_filename(self, filename: str) -> str:
         """Parse version number from filename"""
@@ -717,7 +671,8 @@ class ResourceEditorDialog(tk.Toplevel):
             r for r in resources if r.get('id') != resource_id
         ]
 
-        self._save_to_file()
+        if not self._save_to_file():
+            return
         self._refresh_file_list()
         self._clear_form()
 
@@ -743,8 +698,23 @@ class ResourceEditorDialog(tk.Toplevel):
         # Ensure directory exists
         os.makedirs(os.path.dirname(json_path), exist_ok=True)
 
-        save_json(json_path, self.resources_data)
-        self._invalidate_resources_cache(self.current_version)
+        try:
+            with json_file_lock(json_path):
+                if os.path.exists(json_path):
+                    with open(json_path, encoding='utf-8') as stream:
+                        current = self._normalize_resources_data(json.load(stream))
+                else:
+                    current = self._normalize_resources_data({})
+                baseline = getattr(self, '_metadata_baseline', None)
+                if baseline is None or current != baseline:
+                    raise ValueError("资源库已被其他操作修改，请重新打开编辑器后保存")
+                atomic_json(json_path, self.resources_data)
+                self._metadata_baseline = deepcopy(self.resources_data)
+            self._invalidate_resources_cache(self.current_version)
+            return True
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("保存失败", str(exc), parent=self)
+            return False
 
     def _on_close(self):
         """Close the dialog"""

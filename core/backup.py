@@ -16,6 +16,10 @@ class BackupManager:
 
     BACKUP_DIR_NAME = "gtnh_installer_backups"
     BACKUP_META_FILE = "backup_meta.json"
+    SNAPSHOT_FILE = "snapshot.json"
+    MANAGED_DIRS = ('mods', 'config', 'scripts', 'fonts', 'fontfiles',
+                    'resourcepacks', 'shaderpacks', 'serverutilities')
+    LEGACY_DIRS = ('mods', 'config', 'scripts')
 
     def __init__(self, client_path: str, server_path: str = None):
         self.client_path = client_path
@@ -85,7 +89,7 @@ class BackupManager:
             os.makedirs(backup_path)
             backed_up = {"client": [], "server": []}
 
-            dirs_to_backup = ['mods', 'config', 'scripts']
+            dirs_to_backup = self.MANAGED_DIRS
             installer_data_dir = 'gtnh_installer_data'  # Installation records
 
             # Backup client
@@ -132,6 +136,9 @@ class BackupManager:
                 shutil.rmtree(backup_path, ignore_errors=True)
                 return False, "没有可备份的内容"
 
+            if not save_json(os.path.join(backup_path, self.SNAPSHOT_FILE), {"schema_version": 2}):
+                raise OSError("无法保存备份目录范围信息")
+
             # Save backup metadata
             meta = self._load_backup_meta()
             backup_info = {
@@ -172,54 +179,43 @@ class BackupManager:
             return False, f"备份 '{backup_id}' 不存在"
 
         try:
-            dirs_to_restore = ['mods', 'config', 'scripts', 'gtnh_installer_data']
+            snapshot = load_json(os.path.join(backup_path, self.SNAPSHOT_FILE)) or {}
+            legacy = snapshot.get("schema_version", 1) < 2
+            covered = self.LEGACY_DIRS if legacy else self.MANAGED_DIRS
+            dirs_to_restore = (*covered, 'gtnh_installer_data')
             restored = []
-
-            # Restore client
-            if restore_type in ("client", "all"):
-                client_backup_path = os.path.join(backup_path, "client")
-                if os.path.exists(client_backup_path):
-                    for dir_name in dirs_to_restore:
-                        src_path = os.path.join(client_backup_path, dir_name)
-                        dst_path = os.path.join(self.client_path, dir_name)
-
-                        if os.path.exists(src_path):
-                            # Restore from backup
-                            if os.path.exists(dst_path):
-                                shutil.rmtree(dst_path)
-                            shutil.copytree(src_path, dst_path)
-                            # Ensure empty directories from backup are restored
-                            self._restore_empty_dirs(src_path, dst_path)
-                            logger.info(f"已还原客户端: {dir_name}")
-                        elif dir_name == 'gtnh_installer_data' and os.path.exists(dst_path):
-                            # If backup doesn't have installer data but current does, delete it
+            for side, target, label in (("client", self.client_path, "客户端"),
+                                        ("server", self.server_path, "服务端")):
+                if restore_type not in (side, "all") or not target:
+                    continue
+                source_base = os.path.join(backup_path, side)
+                if not os.path.isdir(source_base):
+                    continue
+                # Old backups did not cover these files; preserve their current records too.
+                extra_records = {}
+                if legacy:
+                    current = load_json(os.path.join(target, 'gtnh_installer_data', 'installed.json')) or {}
+                    extra_records = {key: current.get(key, []) for key in
+                                     ('fonts', 'resourcepacks', 'shaderpacks', 'serverutilities')}
+                for dir_name in dirs_to_restore:
+                    src_path = os.path.join(source_base, dir_name)
+                    dst_path = os.path.join(target, dir_name)
+                    if os.path.exists(src_path):
+                        if os.path.exists(dst_path):
                             shutil.rmtree(dst_path)
-                            logger.info(f"已删除客户端: {dir_name} (备份中不存在)")
-
-                    restored.append("客户端")
-
-            # Restore server
-            if restore_type in ("server", "all") and self.server_path:
-                server_backup_path = os.path.join(backup_path, "server")
-                if os.path.exists(server_backup_path):
-                    for dir_name in dirs_to_restore:
-                        src_path = os.path.join(server_backup_path, dir_name)
-                        dst_path = os.path.join(self.server_path, dir_name)
-
-                        if os.path.exists(src_path):
-                            # Restore from backup
-                            if os.path.exists(dst_path):
-                                shutil.rmtree(dst_path)
-                            shutil.copytree(src_path, dst_path)
-                            # Ensure empty directories from backup are restored
-                            self._restore_empty_dirs(src_path, dst_path)
-                            logger.info(f"已还原服务端: {dir_name}")
-                        elif dir_name == 'gtnh_installer_data' and os.path.exists(dst_path):
-                            # If backup doesn't have installer data but current does, delete it
-                            shutil.rmtree(dst_path)
-                            logger.info(f"已删除服务端: {dir_name} (备份中不存在)")
-
-                    restored.append("服务端")
+                        shutil.copytree(src_path, dst_path)
+                        logger.info(f"已还原{label}: {dir_name}")
+                    elif os.path.exists(dst_path):
+                        # Absence is part of the snapshot, but only within its covered scope.
+                        shutil.rmtree(dst_path)
+                        logger.info(f"已删除{label}: {dir_name} (备份中不存在)")
+                if extra_records:
+                    installed_path = os.path.join(target, 'gtnh_installer_data', 'installed.json')
+                    installed = load_json(installed_path) or {}
+                    installed.update(extra_records)
+                    if not save_json(installed_path, installed):
+                        raise OSError("保留旧备份未覆盖的安装记录失败")
+                restored.append(label)
 
             if not restored:
                 return False, "备份中没有可还原的内容"

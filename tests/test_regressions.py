@@ -457,8 +457,8 @@ class ContentDirectoryRegressionTests(unittest.TestCase):
 
 class DialogFormattingRegressionTests(unittest.TestCase):
     def test_application_display_version_is_current_release(self):
-        self.assertEqual(MainWindow.TITLE, "GTNH 私货安装器 v1.2.0")
-        self.assertEqual(AboutDialog.VERSION_TEXT, "版本 1.2.0")
+        self.assertEqual(MainWindow.TITLE, "GTNH 私货安装器 v2.0")
+        self.assertEqual(AboutDialog.VERSION_TEXT, "版本 2.0")
 
     def test_backup_row_values_formats_backup_type_and_timestamp(self):
         values = BackupDialog._backup_row_values(

@@ -5,6 +5,26 @@ PyInstaller spec file for GTNH Mod Installer
 
 # UPX is disabled because compressed v1.1.1 builds crashed on startup.
 
+from runpy import run_path
+from PyInstaller.utils.win32.versioninfo import (
+    VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct,
+    VarFileInfo, VarStruct,
+)
+
+release = run_path('app_version.py')
+version_info = VSVersionInfo(
+    ffi=FixedFileInfo(filevers=release['VERSION_TUPLE'], prodvers=release['VERSION_TUPLE'],
+                     mask=0x3f, flags=0, OS=0x40004, fileType=1, subtype=0, date=(0, 0)),
+    kids=[StringFileInfo([StringTable('080404B0', [
+        StringStruct('CompanyName', 'Andgatech'),
+        StringStruct('FileDescription', 'GTNH 私货安装器'),
+        StringStruct('FileVersion', release['APP_VERSION']),
+        StringStruct('ProductName', 'GTNH 私货安装器'),
+        StringStruct('ProductVersion', release['APP_VERSION']),
+        StringStruct('OriginalFilename', 'GTNH私货安装器.exe'),
+    ])]), VarFileInfo([VarStruct('Translation', [0x0804, 1200])])],
+)
+
 a = Analysis(
     ['main.py'],
     pathex=[],
@@ -56,6 +76,7 @@ exe = EXE(
     a.datas,
     [],
     name='GTNH私货安装器',
+    version=version_info,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

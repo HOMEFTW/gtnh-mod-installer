@@ -21,7 +21,7 @@ class ResourceListFrame(ttk.Frame):
                  on_double_click: Optional[Callable] = None,
                  on_right_click: Optional[Callable] = None,
                  columns: tuple = None, **kwargs):
-        super().__init__(parent, **kwargs)
+        super().__init__(parent, style='Card.TFrame', **kwargs)
         self.on_select_callback = on_select_callback
         self.on_double_click = on_double_click
         self.on_right_click = on_right_click
@@ -35,14 +35,30 @@ class ResourceListFrame(ttk.Frame):
         """Wrap description text to fit in column"""
         if not text:
             return ""
-        width = width or self.DESC_WRAP_WIDTH
-        # Use textwrap to wrap at word boundaries
-        wrapped = textwrap.fill(text, width=width)
-        return wrapped
+        text = ' '.join(text.split())
+        return text if len(text) <= 70 else text[:69] + '…'
 
     def _create_widgets(self):
-        # Create treeview with scrollbar
-        self.tree_frame = ttk.Frame(self)
+        searchbar = ttk.Frame(self, style='Card.TFrame')
+        searchbar.pack(fill=tk.X, pady=(0, 12))
+        self.count_label = ttk.Label(searchbar, text="0 个资源", style='CardMuted.TLabel')
+        self.count_label.pack(side=tk.LEFT)
+        ttk.Label(searchbar, text="搜索", style='CardMuted.TLabel').pack(side=tk.LEFT, padx=(24, 8))
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(searchbar, textvariable=self.search_var, width=26)
+        self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.search_var.trace_add('write', lambda *_: self._filter_rows())
+        ttk.Button(searchbar, text="清空", command=lambda: self.search_var.set('')).pack(side=tk.LEFT, padx=(8, 0))
+        details = ttk.Frame(self, style='Card.TFrame')
+        details.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+        ttk.Label(details, text="资源说明", style='CardHeading.TLabel').pack(anchor=tk.W, pady=(0, 5))
+        self.details = tk.Text(details, height=2, wrap=tk.WORD, state=tk.DISABLED)
+        self.details.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        detail_scroll = ttk.Scrollbar(details, orient=tk.VERTICAL, command=self.details.yview)
+        detail_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.details.configure(yscrollcommand=detail_scroll.set)
+        self._show_details("选中资源可查看完整说明；双击或右键可编辑资源。")
+        self.tree_frame = ttk.Frame(self, style='Card.TFrame')
         self.tree_frame.pack(fill=tk.BOTH, expand=True)
 
         # Scrollbars
@@ -54,7 +70,7 @@ class ResourceListFrame(ttk.Frame):
 
         # Treeview with increased row height for multi-line description
         style = ttk.Style()
-        style.configure('ResourceTree.Treeview', rowheight=40)
+        style.configure('ResourceTree.Treeview', rowheight=42)
 
         # Use self.columns instead of fixed columns
         self.tree = ttk.Treeview(
@@ -87,7 +103,7 @@ class ResourceListFrame(ttk.Frame):
             self.tree.heading('description', text='说明')
 
             self.tree.column('select', width=50, minwidth=50, anchor=tk.CENTER)
-            self.tree.column('name', width=130, minwidth=100, anchor=tk.W)
+            self.tree.column('name', width=220, minwidth=160, anchor=tk.W)
             self.tree.column('version', width=70, minwidth=60, anchor=tk.CENTER)
             self.tree.column('mc_version', width=80, minwidth=60, anchor=tk.CENTER)
             self.tree.column('size', width=60, minwidth=50, anchor=tk.CENTER)
@@ -101,6 +117,11 @@ class ResourceListFrame(ttk.Frame):
 
         # Bind click event for selection toggle
         self.tree.bind('<Button-1>', self._on_tree_click)
+        self.tree.bind('<<TreeviewSelect>>', self._update_details)
+        self.tree.bind('<space>', self._toggle_focused)
+        self.empty_label = ttk.Label(self.tree_frame, text="暂无资源\n选择客户端与资源版本，或使用在线下载添加模组。",
+                                     style='CardMuted.TLabel', justify=tk.CENTER, wraplength=420)
+        self.empty_label.place(relx=.5, rely=.45, anchor=tk.CENTER)
 
         # Bind double-click and right-click events
         if self.on_double_click:
@@ -165,7 +186,7 @@ class ResourceListFrame(ttk.Frame):
     def set_resources(self, resources: List[dict]):
         """Set the list of resources to display"""
         # Clear existing items
-        for item in self.tree.get_children():
+        for item in self.resource_items:
             self.tree.delete(item)
         self.check_vars.clear()
         self.resource_items.clear()
@@ -200,10 +221,52 @@ class ResourceListFrame(ttk.Frame):
                     desc
                 ))
 
+        self._filter_rows()
+        self._show_details("选中资源可查看完整说明；空格键可勾选资源。")
+
+    def _filter_rows(self):
+        query = self.search_var.get().strip().casefold()
+        visible = 0
+        for item_id, item in self.resource_items.items():
+            text = ' '.join(str(item.get(key, '')) for key in ('id', 'name', 'version', 'description'))
+            if query in text.casefold():
+                self.tree.move(item_id, '', tk.END)
+                visible += 1
+            else:
+                self.tree.detach(item_id)
+        self.count_label.configure(text=f"{visible} / {len(self.resource_items)} 个资源")
+        if visible:
+            self.empty_label.place_forget()
+        else:
+            self.empty_label.configure(text="没有匹配的资源，请尝试其他关键词。" if query else
+                                       "暂无资源\n选择客户端与资源版本，或使用在线下载添加模组。")
+            self.empty_label.place(relx=.5, rely=.45, anchor=tk.CENTER)
+
+    def _show_details(self, text):
+        self.details.configure(state=tk.NORMAL)
+        self.details.delete('1.0', tk.END)
+        self.details.insert('1.0', text)
+        self.details.configure(state=tk.DISABLED)
+
+    def _update_details(self, _event=None):
+        selection = self.tree.selection()
+        if selection and selection[0] in self.resource_items:
+            item = self.resource_items[selection[0]]
+            self._show_details(f"{item.get('name', '')}\n{item.get('description') or '暂无说明'}")
+
+    def _toggle_focused(self, _event=None):
+        item_id = self.tree.focus()
+        if item_id in self.check_vars:
+            self.check_vars[item_id].set(not self.check_vars[item_id].get())
+            self._update_tree_item(item_id)
+            if self.on_select_callback:
+                self.on_select_callback()
+        return 'break'
+
     def select_all(self):
         """Select all resources"""
-        for var in self.check_vars.values():
-            var.set(True)
+        for item_id in self.tree.get_children():
+            self.check_vars[item_id].set(True)
         for item_id in self.check_vars.keys():
             self._update_tree_item(item_id)
         if self.on_select_callback:
@@ -244,10 +307,10 @@ class LogFrame(ttk.Frame):
 
         self.text = tk.Text(
             text_frame,
-            height=6,
+            height=3,
             state=tk.DISABLED,
             yscrollcommand=self.scrollbar.set,
-            font=('Consolas', 9)
+            font=('Microsoft YaHei UI', 9)
         )
         self.text.pack(fill=tk.BOTH, expand=True)
 
@@ -282,8 +345,8 @@ class StatusBar(ttk.Frame):
 
     def _create_widgets(self):
         self.status_var = tk.StringVar(value="就绪")
-        self.label = ttk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN)
-        self.label.pack(fill=tk.X, padx=2, pady=2)
+        self.label = ttk.Label(self, textvariable=self.status_var, style='Muted.TLabel')
+        self.label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, pady=2)
 
     def set_status(self, status: str):
         """Set the status text"""
@@ -309,12 +372,12 @@ class ProgressDialog:
         self.dialog.grab_set()
 
         # Center the dialog
-        self.dialog.geometry("300x100")
+        self.dialog.geometry("440x160")
         self.dialog.resizable(False, False)
 
         # Message label
         self.label_var = tk.StringVar(value=self.message)
-        ttk.Label(self.dialog, textvariable=self.label_var).pack(pady=10)
+        ttk.Label(self.dialog, textvariable=self.label_var, wraplength=400).pack(pady=24)
 
         # Progress bar
         self.progress_var = tk.DoubleVar(value=0)

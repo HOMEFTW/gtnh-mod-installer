@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from utils.logger import logger
-from utils.helpers import load_json, save_json, init_external_content
+from utils.helpers import load_json, save_json, init_external_content, safe_child_path
 from core.minecraft import MinecraftPath
 
 
@@ -36,6 +36,7 @@ class Resource:
     mc_version: str = ""  # Compatible MC version (e.g., "2.7.0")
     description: str = ""
     server_required: bool = False  # For mods: whether server install is needed
+    download: Optional[dict] = None  # Fixed artifact URL and checksum, when available
     # Note: Server installation rules:
     # MOD -> depends on server_required field
     # SCRIPT, CONFIG, SERVERUTILITIES -> always install on both client and server
@@ -69,6 +70,7 @@ class Installer:
 
     def set_server_path(self, server_path: str):
         """Set server .minecraft path"""
+        self._server_installed = None
         if server_path and os.path.exists(server_path):
             self.server_mc_path = MinecraftPath(server_path)
             self.server_installed_path = os.path.join(
@@ -135,9 +137,13 @@ class Installer:
         entry = {
             "id": resource.id,
             "name": resource.name,
-            "filename": resource.filename
+            "filename": resource.filename,
+            "version": resource.version,
+            "description": resource.description,
+            "server_required": resource.server_required,
+            "download": resource.download
         }
-        existing = installed_data.get(type_key, [])
+        existing = installed_data.setdefault(type_key, [])
         for idx, current in enumerate(existing):
             if self._entry_id(current) == resource.id:
                 existing[idx] = entry
@@ -228,7 +234,8 @@ class Installer:
                     version=info.get("version", ""),
                     mc_version=info.get("mc_version", ""),
                     description=info.get("description", ""),
-                    server_required=info.get("server_required", False)
+                    server_required=info.get("server_required", False),
+                    download=info.get("download")
                 )
                 resources.append(resource)
 
@@ -471,6 +478,8 @@ class Installer:
                     installed_anywhere = True
                 else:
                     logger.warning(f"服务端安装失败: {server_message}")
+                    prefix = "客户端已安装；" if installed_anywhere else ""
+                    return False, f"{prefix}服务端安装失败: {server_message}"
 
         if not installed_anywhere:
             return False, f"资源无法安装到所选位置: {resource.name}"
@@ -479,158 +488,56 @@ class Installer:
         return True, f"成功安装: {resource.name}"
 
     def uninstall_resource(self, resource_id: str, resource_type: ResourceType, uninstall_server: bool = True) -> Tuple[bool, str]:
-        """Uninstall a resource from client and optionally from server"""
-        resource = self.get_resource_by_id(resource_id, resource_type)
+        """Remove each side's tracked files; retain failed records for a retry."""
         type_key = resource_type.value
-        removed_from = []
-        client_installed = self._load_client_installed()
-        server_installed = self._load_server_installed()
-        client_entry = self._get_installed_entry(client_installed, type_key, resource_id)
-        server_entry = self._get_installed_entry(server_installed, type_key, resource_id)
-
-        if not resource:
-            tracked_entry = client_entry or server_entry
-            if not tracked_entry:
-                return False, f"未找到资源: {resource_id}"
-            resource = Resource(
-                id=resource_id,
-                name=self._entry_name(tracked_entry) or resource_id,
-                filename=self._entry_filename(tracked_entry) or resource_id,
-                source_path="",
-                resource_type=resource_type
-            )
-
-        # Uninstall from client
-        dest_dir = self._get_dest_dir(resource_type)
-        if dest_dir:
-            # For configs, delete tracked files
-            if resource_type == ResourceType.CONFIG:
-                config_files = client_installed.get("config_files", {}).get(resource_id, [])
-                if config_files:
-                    for rel_path in config_files:
-                        file_path = os.path.join(dest_dir, rel_path)
-                        try:
-                            if os.path.exists(file_path):
-                                if os.path.isfile(file_path):
-                                    os.remove(file_path)
-                                    logger.info(f"已删除配置文件: {rel_path}")
-                                elif os.path.isdir(file_path):
-                                    shutil.rmtree(file_path)
-                                    logger.info(f"已删除配置目录: {rel_path}")
-                        except Exception as e:
-                            logger.error(f"删除配置失败 {rel_path}: {str(e)}")
-                    # Clean up empty parent directories
-                    for rel_path in config_files:
-                        parent = os.path.dirname(os.path.join(dest_dir, rel_path))
-                        while parent != dest_dir:
-                            if os.path.isdir(parent) and not os.listdir(parent):
-                                try:
-                                    os.rmdir(parent)
-                                    logger.info(f"已删除空目录: {os.path.relpath(parent, dest_dir)}")
-                                except:
-                                    pass
-                            parent = os.path.dirname(parent)
-                    removed_from.append("客户端")
-                    if resource_id in client_installed.get("config_files", {}):
-                        del client_installed["config_files"][resource_id]
-                else:
-                    file_path = os.path.join(dest_dir, resource.filename)
-                    try:
-                        if os.path.exists(file_path):
-                            if os.path.isfile(file_path):
-                                os.remove(file_path)
-                            elif os.path.isdir(file_path):
-                                shutil.rmtree(file_path)
-                            logger.info(f"已从客户端删除: {resource.filename}")
-                            removed_from.append("客户端")
-                    except Exception as e:
-                        logger.error(f"客户端删除失败: {str(e)}")
-            else:
-                file_path = os.path.join(dest_dir, resource.filename)
-                try:
-                    if os.path.exists(file_path):
-                        if os.path.isfile(file_path):
-                            os.remove(file_path)
-                        elif os.path.isdir(file_path):
-                            shutil.rmtree(file_path)
-                        logger.info(f"已从客户端删除: {resource.filename}")
-                        removed_from.append("客户端")
-                except Exception as e:
-                    logger.error(f"客户端删除失败: {str(e)}")
-
-                if resource_type == ResourceType.FONT:
-                    fontfiles_dir = self.mc_path.get_fontfiles_path()
-                    fontfiles_path = os.path.join(fontfiles_dir, resource.filename)
-                    try:
-                        if os.path.exists(fontfiles_path):
-                            if os.path.isfile(fontfiles_path):
-                                os.remove(fontfiles_path)
-                            elif os.path.isdir(fontfiles_path):
-                                shutil.rmtree(fontfiles_path)
-                            logger.info(f"已从 fontfiles 删除: {resource.filename}")
-                    except Exception as e:
-                        logger.error(f"fontfiles 删除失败: {str(e)}")
-
-            if client_entry in client_installed[type_key]:
-                client_installed[type_key].remove(client_entry)
-            self._save_client_installed()
-
-        # Uninstall from server if requested
+        resource = self.get_resource_by_id(resource_id, resource_type)
+        sides = [("客户端", self.mc_path, self._load_client_installed(), self._save_client_installed)]
         if uninstall_server and self.server_mc_path:
-            server_dest_dir = self._get_dest_dir(resource_type, self.server_mc_path)
-            if server_dest_dir:
-                if resource_type == ResourceType.CONFIG:
-                    server_config_files = server_installed.get("config_files", {}).get(resource_id, [])
-                    if server_config_files:
-                        for rel_path in server_config_files:
-                            file_path = os.path.join(server_dest_dir, rel_path)
-                            try:
-                                if os.path.exists(file_path):
-                                    if os.path.isfile(file_path):
-                                        os.remove(file_path)
-                                        logger.info(f"已从服务端删除配置: {rel_path}")
-                                    elif os.path.isdir(file_path):
-                                        shutil.rmtree(file_path)
-                                        logger.info(f"已从服务端删除配置目录: {rel_path}")
-                            except Exception as e:
-                                logger.error(f"服务端删除配置失败 {rel_path}: {str(e)}")
-                        removed_from.append("服务端")
-                        if resource_id in server_installed.get("config_files", {}):
-                            del server_installed["config_files"][resource_id]
-                    else:
-                        server_file_path = os.path.join(server_dest_dir, resource.filename)
-                        try:
-                            if os.path.exists(server_file_path):
-                                if os.path.isfile(server_file_path):
-                                    os.remove(server_file_path)
-                                elif os.path.isdir(server_file_path):
-                                    shutil.rmtree(server_file_path)
-                                logger.info(f"已从服务端删除: {resource.filename}")
-                                removed_from.append("服务端")
-                        except Exception as e:
-                            logger.error(f"服务端删除失败: {str(e)}")
-                else:
-                    server_file_path = os.path.join(server_dest_dir, resource.filename)
-                    try:
-                        if os.path.exists(server_file_path):
-                            if os.path.isfile(server_file_path):
-                                os.remove(server_file_path)
-                            elif os.path.isdir(server_file_path):
-                                shutil.rmtree(server_file_path)
-                            logger.info(f"已从服务端删除: {resource.filename}")
-                            removed_from.append("服务端")
-                    except Exception as e:
-                        logger.error(f"服务端删除失败: {str(e)}")
-
-                if server_entry in server_installed[type_key]:
-                    server_installed[type_key].remove(server_entry)
-                self._save_server_installed()
-
-        if removed_from:
-            logger.success(f"卸载成功: {resource.name} (从{'/'.join(removed_from)}卸载)")
-            return True, f"成功卸载: {resource.name} (从{'/'.join(removed_from)}卸载)"
-        else:
-            return True, f"资源未安装: {resource.name}"
+            sides.append(("服务端", self.server_mc_path, self._load_server_installed(), self._save_server_installed))
+        removed, errors = [], []
+        found = False
+        for label, mc_path, data, save in sides:
+            entry = self._get_installed_entry(data, type_key, resource_id)
+            if entry is None:
+                continue
+            found = True
+            # Legacy records contain only IDs; only those fall back to the library.
+            filename = self._entry_filename(entry)
+            if isinstance(entry, str) and resource:
+                filename = resource.filename
+            dest_dir = self._get_dest_dir(resource_type, mc_path)
+            config_files = data.get("config_files", {}).get(resource_id, []) if resource_type == ResourceType.CONFIG else []
+            try:
+                paths = [safe_child_path(dest_dir, name) for name in (config_files or [filename])]
+                if resource_type == ResourceType.FONT:
+                    paths.append(safe_child_path(mc_path.get_fontfiles_path(), filename))
+                for path in paths:
+                    if os.path.isfile(path) or os.path.islink(path):
+                        os.remove(path)
+                    elif os.path.isdir(path):
+                        shutil.rmtree(path)
+                # Empty config parents are cosmetic; a failed removal must not lose records.
+                if config_files:
+                    for path in paths:
+                        parent = os.path.dirname(path)
+                        while os.path.normcase(parent) != os.path.normcase(os.path.realpath(dest_dir)):
+                            if not os.path.isdir(parent) or os.listdir(parent):
+                                break
+                            os.rmdir(parent)
+                            parent = os.path.dirname(parent)
+            except (OSError, ValueError) as exc:
+                errors.append(f"{label}卸载失败: {exc}")
+                continue
+            data[type_key].remove(entry)
+            if config_files:
+                data["config_files"].pop(resource_id, None)
+            save()
+            removed.append(label)
+        if errors:
+            return False, "；".join(errors)
+        if not found:
+            return False, f"未找到安装记录: {resource_id}"
+        return True, f"成功卸载: {resource_id} (从{'/'.join(removed)}卸载)"
 
     def get_installed_resources(self, resource_type: ResourceType, location: str = "client") -> List[str]:
         """Get list of installed resource IDs for a type"""

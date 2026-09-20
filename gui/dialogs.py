@@ -4,6 +4,8 @@ Dialog windows for GTNH Mod Installer GUI
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import Optional
+from app_version import APP_VERSION
+from gui.theme import dialog_heading
 
 
 class FolderSelectDialog:
@@ -37,9 +39,11 @@ class BackupDialog(tk.Toplevel):
         self.after(0, self._schedule_load_backups)
 
     def _create_widgets(self):
-        self.geometry("600x400")
+        self.geometry("850x580")
+        self.minsize(800, 520)
 
-        main_frame = ttk.Frame(self, padding=10)
+        dialog_heading(self, "备份与还原", "保存当前配置，在需要时恢复客户端或服务端资源。")
+        main_frame = ttk.Frame(self, padding=(20, 0, 20, 20))
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Backup list
@@ -74,8 +78,8 @@ class BackupDialog(tk.Toplevel):
         self.scrollbar.config(command=self.tree.yview)
 
         # Action buttons
-        action_frame = ttk.LabelFrame(main_frame, text="操作", padding=5)
-        action_frame.pack(fill=tk.X, pady=5)
+        action_frame = ttk.LabelFrame(main_frame, text="备份操作", padding=12)
+        action_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5, before=list_frame)
 
         # First row: Create backup buttons
         create_row = ttk.Frame(action_frame)
@@ -85,15 +89,15 @@ class BackupDialog(tk.Toplevel):
         ttk.Button(create_row, text="创建客户端备份", command=lambda: self._create_backup("client")).pack(side=tk.LEFT, padx=5)
         if self.has_server:
             ttk.Button(create_row, text="创建服务端备份", command=lambda: self._create_backup("server")).pack(side=tk.LEFT, padx=5)
-            ttk.Button(create_row, text="创建完整备份", command=lambda: self._create_backup("all")).pack(side=tk.LEFT, padx=5)
+            ttk.Button(create_row, text="创建完整备份", style="Primary.TButton", command=lambda: self._create_backup("all")).pack(side=tk.LEFT, padx=5)
 
         # Second row: Restore and delete buttons
         restore_row = ttk.Frame(action_frame)
         restore_row.pack(fill=tk.X, pady=2)
 
         ttk.Label(restore_row, text="还原:").pack(side=tk.LEFT, padx=5)
-        ttk.Button(restore_row, text="还原选中备份", command=self._restore_backup).pack(side=tk.LEFT, padx=5)
-        ttk.Button(restore_row, text="删除选中备份", command=self._delete_backup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(restore_row, text="还原选中备份", style="Primary.TButton", command=self._restore_backup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(restore_row, text="删除选中备份", style="Danger.TButton", command=self._delete_backup).pack(side=tk.LEFT, padx=5)
         ttk.Button(restore_row, text="关闭", command=self._close).pack(side=tk.RIGHT, padx=5)
 
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -102,9 +106,9 @@ class BackupDialog(tk.Toplevel):
         self.transient(self.parent)
         self.grab_set()
         self.update_idletasks()
-        x = self.parent.winfo_x() + (self.parent.winfo_width() - 600) // 2
-        y = self.parent.winfo_y() + (self.parent.winfo_height() - 400) // 2
-        self.geometry(f"600x400+{x}+{y}")
+        x = self.parent.winfo_x() + (self.parent.winfo_width() - 850) // 2
+        y = self.parent.winfo_y() + (self.parent.winfo_height() - 580) // 2
+        self.geometry(f"850x580+{x}+{y}")
 
     def _load_backups(self):
         """Load and display backups"""
@@ -263,7 +267,7 @@ class BackupDialog(tk.Toplevel):
 class AboutDialog(tk.Toplevel):
     """About dialog"""
 
-    VERSION_TEXT = "版本 1.2.0"
+    VERSION_TEXT = f"版本 {APP_VERSION}"
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -274,10 +278,10 @@ class AboutDialog(tk.Toplevel):
         self._center_window()
 
     def _create_widgets(self):
-        main_frame = ttk.Frame(self, padding=20)
+        main_frame = ttk.Frame(self, padding=32)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(main_frame, text="GTNH 私货安装器", font=('Arial', 14, 'bold')).pack()
+        ttk.Label(main_frame, text="GTNH 私货安装器", font=('Microsoft YaHei UI', 20, 'bold')).pack()
         ttk.Label(main_frame, text=self.VERSION_TEXT).pack(pady=5)
         ttk.Label(main_frame, text="为 GTNH 整合包安装额外模组、脚本和配置文件").pack(pady=10)
         ttk.Label(main_frame, text="工作室 Andgatech").pack(pady=2)

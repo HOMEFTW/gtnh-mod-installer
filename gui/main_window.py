@@ -2,15 +2,20 @@
 Main window for GTNH Mod Installer GUI
 """
 import tkinter as tk
+import queue
 from tkinter import ttk, messagebox, filedialog
 from typing import Optional, List, Tuple
 import os
 import sys
 import webbrowser
 
+from app_version import APP_VERSION
+from gui.theme import apply_theme
 from gui.widgets import ResourceListFrame, LogFrame, StatusBar, ProgressDialog
 from gui.dialogs import FolderSelectDialog, BackupDialog, AboutDialog
 from gui.resource_editor import ResourceEditorDialog
+from gui.online_mods import OnlineModsDialog
+from gui.downloads import DownloadsDialog
 from core.minecraft import MinecraftPath
 from core.installer import Installer, ResourceType
 from core.backup import BackupManager
@@ -22,6 +27,7 @@ from utils.helpers import (
     is_frozen,
     load_json,
     save_json,
+    safe_child_path,
 )
 
 # Try to import tkinterdnd2 for drag and drop support
@@ -35,7 +41,7 @@ except ImportError:
 class MainWindow:
     """Main application window"""
 
-    TITLE = "GTNH 私货安装器 v1.2.0"
+    TITLE = f"GTNH 私货安装器 v{APP_VERSION}"
     RESOURCE_TABS = [
         ("mod", "模组", ResourceType.MOD),
         ("script", "脚本", ResourceType.SCRIPT),
@@ -55,8 +61,9 @@ class MainWindow:
         else:
             self.root = tk.Tk()
         self.root.title(self.TITLE)
-        self.root.geometry("900x900")
-        self.root.minsize(700, 500)
+        self.root.geometry("1180x900")
+        self.root.minsize(1000, 800)
+        apply_theme(self.root)
 
         # Set window icon
         self._set_window_icon()
@@ -68,7 +75,8 @@ class MainWindow:
         self.current_version: str = ""
 
         # Generate list flag
-        self.generate_list_var = tk.BooleanVar(value=True)
+        self.generate_list_var = tk.BooleanVar(value=False)
+        self._manifest_busy = False
 
         # Build UI
         self._create_menu()
@@ -111,14 +119,15 @@ class MainWindow:
         file_menu.add_separator()
         file_menu.add_command(label="加载安装清单...", command=self._load_install_list_dialog)
         file_menu.add_separator()
-        file_menu.add_checkbutton(label="安装后生成清单", variable=self.generate_list_var)
-        file_menu.add_separator()
         file_menu.add_command(label="退出", command=self.root.quit)
 
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="工具", menu=tools_menu)
         tools_menu.add_command(label="备份管理", command=self._show_backup_dialog)
+        tools_menu.add_cascade(label="下载中心", menu=self._create_download_menu(tools_menu))
+        tools_menu.add_command(label="初始化模组", command=self._initialize_mods)
+        tools_menu.add_command(label="汉化安装...", command=self._install_localization)
         tools_menu.add_separator()
         tools_menu.add_command(label="中文维基私货页面", command=self._open_wiki)
         tools_menu.add_command(label="安装常见问题", command=self._open_install_faq)
@@ -129,187 +138,127 @@ class MainWindow:
         help_menu.add_command(label="关于", command=self._show_about)
 
     def _create_widgets(self):
-        """Create main widgets"""
-        main_frame = ttk.Frame(self.root, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        """Resource navigation, workspace settings and a focused installation area."""
+        shell = ttk.Frame(self.root)
+        shell.pack(fill=tk.BOTH, expand=True)
+        sidebar = ttk.Frame(shell, style='Card.TFrame', width=190, padding=(14, 22))
+        sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        sidebar.pack_propagate(False)
+        ttk.Label(sidebar, text="GTNH", style='CardHeading.TLabel',
+                  font=('Microsoft YaHei UI', 22, 'bold')).pack(anchor=tk.W, padx=12)
+        ttk.Label(sidebar, text="私货安装器", style='CardMuted.TLabel').pack(anchor=tk.W, padx=12, pady=(0, 26))
+        ttk.Label(sidebar, text="资源库", style='CardMuted.TLabel').pack(anchor=tk.W, padx=12, pady=(0, 8))
+        self.nav_buttons = []
+        for index, (_attr, label, _type) in enumerate(self.RESOURCE_TABS):
+            button = ttk.Button(sidebar, text=label, style='Nav.TButton',
+                                command=lambda i=index: self.notebook.select(i))
+            button.pack(fill=tk.X, pady=2)
+            self.nav_buttons.append(button)
+        ttk.Label(sidebar, text=f"v{APP_VERSION}  ·  GT New Horizons", style='CardMuted.TLabel',
+                  font=('Microsoft YaHei UI', 8)).pack(side=tk.BOTTOM, anchor=tk.W, padx=8)
+        ttk.Button(sidebar, text="备份与还原", command=self._show_backup_dialog).pack(side=tk.BOTTOM, fill=tk.X, pady=16)
 
-        # Path selection
-        path_frame = ttk.LabelFrame(main_frame, text="路径设置", padding=5)
-        path_frame.pack(fill=tk.X, pady=5)
+        workspace = ttk.Frame(shell, padding=(22, 20))
+        workspace.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        heading = ttk.Frame(workspace)
+        heading.pack(fill=tk.X, pady=(0, 16))
+        ttk.Menubutton(heading, text="下载中心", style='Primary.TMenubutton',
+                       menu=self._create_download_menu(heading)).pack(side=tk.RIGHT)
+        self.page_title = ttk.Label(heading, text="模组", style='Title.TLabel')
+        self.page_title.pack(anchor=tk.W)
+        ttk.Label(heading, text="管理额外资源，为你的 GTNH 配置合适的内容。", style='Muted.TLabel').pack(anchor=tk.W, pady=(3, 0))
 
-        # Client path
-        ttk.Label(path_frame, text="客户端路径:").grid(row=0, column=0, sticky=tk.W)
-        self.client_path_var = tk.StringVar()
-        self.client_path_entry = ttk.Entry(path_frame, textvariable=self.client_path_var, width=45)
-        self.client_path_entry.grid(row=0, column=1, padx=5, sticky=tk.EW)
-        ttk.Button(path_frame, text="选择...", command=self._select_client_folder).grid(row=0, column=2)
-
-        # Server path
-        ttk.Label(path_frame, text="服务端路径:").grid(row=1, column=0, sticky=tk.W, pady=(5, 0))
-        self.server_path_var = tk.StringVar()
-        self.server_path_entry = ttk.Entry(path_frame, textvariable=self.server_path_var, width=45)
-        self.server_path_entry.grid(row=1, column=1, padx=5, sticky=tk.EW, pady=(5, 0))
-        ttk.Button(path_frame, text="选择...", command=self._select_server_folder).grid(row=1, column=2, pady=(5, 0))
-
-        # Version selection
-        ttk.Label(path_frame, text="资源版本:").grid(row=0, column=3, padx=(20, 0), sticky=tk.W)
+        settings = ttk.Frame(workspace, style='Card.TFrame', padding=16)
+        settings.pack(fill=tk.X, pady=(0, 16))
+        settings.columnconfigure(1, weight=1)
+        ttk.Label(settings, text="安装位置", style='CardHeading.TLabel').grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
         self.version_var = tk.StringVar()
-        self.version_combo = ttk.Combobox(path_frame, textvariable=self.version_var, width=12, state='readonly')
-        self.version_combo.grid(row=0, column=4, padx=5)
+        self.version_combo = ttk.Combobox(settings, textvariable=self.version_var, width=12, state='readonly')
+        self.version_combo.grid(row=0, column=2, padx=8, pady=(0, 10))
         self.version_combo.bind('<<ComboboxSelected>>', self._on_version_changed)
-        ttk.Button(path_frame, text="刷新版本", command=self._refresh_versions).grid(row=0, column=5, padx=5)
+        ttk.Label(settings, text="资源版本", style='CardMuted.TLabel').grid(row=0, column=1, sticky=tk.E, pady=(0, 10))
+        ttk.Button(settings, text="刷新", command=self._refresh_versions).grid(row=0, column=3, pady=(0, 10))
+        self.client_path_var = tk.StringVar()
+        self.server_path_var = tk.StringVar()
+        for row, label, var, command, attr in (
+            (1, "客户端", self.client_path_var, self._select_client_folder, 'client_path_entry'),
+            (2, "服务端", self.server_path_var, self._select_server_folder, 'server_path_entry')):
+            ttk.Label(settings, text=label, style='CardMuted.TLabel').grid(row=row, column=0, sticky=tk.W, padx=(0, 16), pady=4)
+            entry = ttk.Entry(settings, textvariable=var, state='readonly')
+            entry.grid(row=row, column=1, columnspan=2, sticky=tk.EW, padx=(0, 8), pady=4)
+            setattr(self, attr, entry)
+            ttk.Button(settings, text="选择文件夹", command=command).grid(row=row, column=3, pady=4)
 
-        path_frame.columnconfigure(1, weight=1)
+        # Pack the footer first so primary actions remain visible when shrinking the window.
+        footer = ttk.Frame(workspace)
+        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(12, 0))
+        self.log_frame = LogFrame(footer)
+        self.status_bar = StatusBar(footer)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 0))
+        ttk.Button(self.status_bar, text="展开日志", command=self._toggle_log).pack(side=tk.RIGHT)
+        self.log_toggle = self.status_bar.winfo_children()[-1]
+        self._logs_visible = False
+        actions = ttk.Frame(footer)
+        actions.pack(fill=tk.X)
+        self.selection_label = ttk.Label(actions, text="已选择: 0 项", style='Muted.TLabel')
+        self.selection_label.pack(side=tk.LEFT)
+        self.install_button = ttk.Button(actions, text="安装选中资源", style='Primary.TButton', command=self._install_selected)
+        self.install_button.pack(side=tk.RIGHT)
+        self.uninstall_button = ttk.Button(actions, text="卸载选中资源", style='Danger.TButton', command=self._uninstall_selected)
+        self.uninstall_button.pack(side=tk.RIGHT, padx=8)
+        ttk.Button(actions, text="加载清单", command=self._load_install_list_dialog).pack(side=tk.RIGHT)
+        ttk.Button(actions, text="编辑资源", command=self._open_resource_editor).pack(side=tk.RIGHT, padx=8)
 
-        # Tab notebook
-        self.notebook = ttk.Notebook(main_frame)
-        self.notebook.pack(fill=tk.BOTH, expand=True, pady=5)
-
-        # Create tabs
-        self.mod_frame = ttk.Frame(self.notebook)
-        self.script_frame = ttk.Frame(self.notebook)
-        self.config_frame = ttk.Frame(self.notebook)
-        self.font_frame = ttk.Frame(self.notebook)
-        self.resourcepack_frame = ttk.Frame(self.notebook)
-        self.shaderpack_frame = ttk.Frame(self.notebook)
-        self.serverutilities_frame = ttk.Frame(self.notebook)
-        self.installed_frame = ttk.Frame(self.notebook)
-
-        self.notebook.add(self.mod_frame, text="模组")
-        self.notebook.add(self.script_frame, text="脚本")
-        self.notebook.add(self.config_frame, text="配置")
-        self.notebook.add(self.font_frame, text="字体")
-        self.notebook.add(self.resourcepack_frame, text="资源包")
-        self.notebook.add(self.shaderpack_frame, text="光影包")
-        self.notebook.add(self.serverutilities_frame, text="ServerUtilities")
-        self.notebook.add(self.installed_frame, text="已安装")
-
-        # Resource list frames for each tab
-        self.mod_list = ResourceListFrame(
-            self.mod_frame,
-            on_select_callback=self._update_selection_count,
-            on_double_click=self._on_resource_double_click,
-            on_right_click=self._show_context_menu
-        )
-        self.mod_list.pack(fill=tk.BOTH, expand=True)
-
-        self.script_list = ResourceListFrame(
-            self.script_frame,
-            on_select_callback=self._update_selection_count,
-            on_double_click=self._on_resource_double_click,
-            on_right_click=self._show_context_menu
-        )
-        self.script_list.pack(fill=tk.BOTH, expand=True)
-
-        self.config_list = ResourceListFrame(
-            self.config_frame,
-            on_select_callback=self._update_selection_count,
-            on_double_click=self._on_resource_double_click,
-            on_right_click=self._show_context_menu
-        )
-        self.config_list.pack(fill=tk.BOTH, expand=True)
-
-        self.font_list = ResourceListFrame(
-            self.font_frame,
-            on_select_callback=self._update_selection_count,
-            on_double_click=self._on_resource_double_click,
-            on_right_click=self._show_context_menu
-        )
-        self.font_list.pack(fill=tk.BOTH, expand=True)
-
-        self.resourcepack_list = ResourceListFrame(
-            self.resourcepack_frame,
-            on_select_callback=self._update_selection_count,
-            on_double_click=self._on_resource_double_click,
-            on_right_click=self._show_context_menu
-        )
-        self.resourcepack_list.pack(fill=tk.BOTH, expand=True)
-
-        self.shaderpack_list = ResourceListFrame(
-            self.shaderpack_frame,
-            on_select_callback=self._update_selection_count,
-            on_double_click=self._on_resource_double_click,
-            on_right_click=self._show_context_menu
-        )
-        self.shaderpack_list.pack(fill=tk.BOTH, expand=True)
-
-        self.serverutilities_list = ResourceListFrame(
-            self.serverutilities_frame,
-            on_select_callback=self._update_selection_count,
-            on_double_click=self._on_resource_double_click,
-            on_right_click=self._show_context_menu
-        )
-        self.serverutilities_list.pack(fill=tk.BOTH, expand=True)
-
-        # Installed tab - no double-click/right-click callbacks
-        self.installed_list = ResourceListFrame(
-            self.installed_frame,
-            on_select_callback=self._update_selection_count,
-            columns=ResourceListFrame.COLUMNS_INSTALLED
-        )
-        self.installed_list.pack(fill=tk.BOTH, expand=True)
-
-        # Bind tab change
+        toolbar = ttk.Frame(workspace)
+        toolbar.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(toolbar, text="全选", command=self._select_all).pack(side=tk.LEFT)
+        ttk.Button(toolbar, text="取消全选", command=self._deselect_all).pack(side=tk.LEFT, padx=8)
+        ttk.Checkbutton(toolbar, text="安装后生成清单", variable=self.generate_list_var).pack(side=tk.LEFT, padx=(12, 4))
+        ttk.Button(toolbar, text="生成清单", command=self._save_install_list).pack(side=tk.LEFT)
+        ttk.Button(toolbar, text="备份当前", command=self._create_backup).pack(side=tk.RIGHT)
+        self.notebook = ttk.Notebook(workspace, style='Content.TNotebook')
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        for attr, label, res_type in self.RESOURCE_TABS:
+            frame = ttk.Frame(self.notebook, style='Card.TFrame', padding=12)
+            setattr(self, f'{attr}_frame', frame)
+            self.notebook.add(frame, text=label)
+            options = {'on_select_callback': self._update_selection_count}
+            if res_type is None:
+                options['columns'] = ResourceListFrame.COLUMNS_INSTALLED
+            else:
+                options.update(on_double_click=self._on_resource_double_click, on_right_click=self._show_context_menu)
+            listing = ResourceListFrame(frame, **options)
+            listing.pack(fill=tk.BOTH, expand=True)
+            setattr(self, f'{attr}_list', listing)
         self.notebook.bind('<<NotebookTabChanged>>', self._on_tab_changed)
-
-        # Selection buttons
-        select_frame = ttk.Frame(main_frame)
-        select_frame.pack(fill=tk.X, pady=5)
-
-        ttk.Button(select_frame, text="全选", command=self._select_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(select_frame, text="取消全选", command=self._deselect_all).pack(side=tk.LEFT, padx=5)
-
-        self.selection_label = ttk.Label(select_frame, text="已选择: 0 项")
-        self.selection_label.pack(side=tk.RIGHT, padx=10)
-
-        # Action buttons
-        action_frame = ttk.LabelFrame(main_frame, text="操作", padding=5)
-        action_frame.pack(fill=tk.X, pady=5)
-
-        ttk.Button(action_frame, text="备份当前", command=self._create_backup).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="还原备份", command=self._show_backup_dialog).pack(side=tk.LEFT, padx=5)
-
-        ttk.Separator(action_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
-
-        ttk.Button(action_frame, text="安装选中", command=self._install_selected).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="卸载选中", command=self._uninstall_selected).pack(side=tk.LEFT, padx=5)
-
-        ttk.Separator(action_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
-
-        ttk.Button(action_frame, text="加载清单", command=self._load_install_list_dialog).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="编辑资源", command=self._open_resource_editor).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="初始化", command=self._initialize_mods).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_frame, text="汉化安装", command=self._install_localization).pack(side=tk.LEFT, padx=5)
-
-        # Drop zone for .hflist files
-        drop_frame = ttk.LabelFrame(main_frame, text="安装清单 (可将 .hflist 文件拖入此区域)", padding=10)
-        drop_frame.pack(fill=tk.X, pady=5)
-
-        self.drop_label = ttk.Label(drop_frame, text="将 .hflist 清单文件拖放到此处，或点击上方【加载清单】按钮",
-                                    anchor=tk.CENTER, font=('Arial', 10))
-        self.drop_label.pack(fill=tk.X, pady=10)
-
-        # Bind click on drop zone
-        drop_frame.bind('<Button-1>', lambda _: self._load_install_list_dialog())
-        self.drop_label.bind('<Button-1>', lambda _: self._load_install_list_dialog())
-
-        # Status bar
-        self.status_bar = StatusBar(main_frame)
-        self.status_bar.pack(fill=tk.X, pady=5)
-
-        # Log frame
-        self.log_frame = LogFrame(main_frame)
-        self.log_frame.pack(fill=tk.X, pady=5)
-
-        # Initialize version list
         self._refresh_versions()
+        self._on_tab_changed(None)
+
+    def _toggle_log(self):
+        self._logs_visible = not self._logs_visible
+        if self._logs_visible:
+            self.log_frame.pack(fill=tk.X, before=self.status_bar, pady=(10, 0))
+        else:
+            self.log_frame.pack_forget()
+        self.log_toggle.configure(text="收起日志" if self._logs_visible else "展开日志")
 
     def _setup_logger(self):
         """Setup logger with GUI callback"""
-        def log_callback(message: str):
-            self.log_frame.append_log(message)
-
-        logger.set_gui_callback(log_callback)
+        # Install/download workers may log; widgets must only be touched on the Tk thread.
+        self._log_events = queue.Queue()
+        logger.set_gui_callback(self._log_events.put)
+        def drain_logs():
+            try:
+                while True:
+                    self.log_frame.append_log(self._log_events.get_nowait())
+            except queue.Empty:
+                pass
+            self._log_job = self.root.after(100, drain_logs)
+        self._log_job = self.root.after(100, drain_logs)
+        def stop_logs(event):
+            if event.widget is self.root:
+                self.root.after_cancel(self._log_job)
+        self.root.bind('<Destroy>', stop_logs, add='+')
 
     def _load_config(self):
         """Load saved config"""
@@ -579,7 +528,14 @@ class MainWindow:
         self.installed_list.set_resources(installed_data)
 
     def _on_tab_changed(self, _event):
-        """Handle tab change event"""
+        """Keep sidebar, title and context actions in sync."""
+        index = self.notebook.index(self.notebook.select())
+        self.page_title.configure(text=self.RESOURCE_TABS[index][1])
+        for i, button in enumerate(self.nav_buttons):
+            button.configure(style='Active.Nav.TButton' if i == index else 'Nav.TButton')
+        installed = self.RESOURCE_TABS[index][2] is None
+        self.uninstall_button.configure(state=tk.NORMAL if installed else tk.DISABLED)
+        self.install_button.configure(state=tk.DISABLED if installed else tk.NORMAL)
         self._update_selection_count()
 
     def _get_current_list(self) -> ResourceListFrame:
@@ -610,7 +566,11 @@ class MainWindow:
 
     def _update_selection_count(self):
         """Update the selection count label"""
-        selected = len(self._get_current_list().get_selected_ids())
+        if self.notebook.index(self.notebook.select()) == len(self.RESOURCE_TABS) - 1:
+            selected = len(self.installed_list.get_selected_ids())
+        else:
+            selected = sum(len(getattr(self, f'{attr}_list').get_selected_ids())
+                           for attr, _, kind in self.RESOURCE_TABS if kind is not None)
         self.selection_label.config(text=f"已选择: {selected} 项")
 
     def _create_backup(self):
@@ -730,7 +690,7 @@ class MainWindow:
 
         # Generate installation list file
         if self.generate_list_var.get():
-            self._save_install_list(all_selected)
+            self._save_install_list()
 
         # Refresh lists
         self._load_all_resources()
@@ -766,101 +726,85 @@ class MainWindow:
         dialog.wait_window(dialog)
         return result[0]
 
-    def _save_install_list(self, selected_items: List[Tuple[str, ResourceType]]):
-        """Save installation list to .hflist file"""
+    def _save_install_list(self):
+        """Export what was actually installed, rather than the last checkbox selection."""
         from datetime import datetime
-
-        # Group by type
-        list_data = {
-            "version": "1.0",
-            "created": datetime.now().isoformat(),
-            "gtnh_version": self.version_var.get(),
-            "resources": {
-                "mods": [],
-                "scripts": [],
-                "configs": [],
-                "fonts": [],
-                "resourcepacks": [],
-                "shaderpacks": [],
-                "serverutilities": []
-            }
-        }
-
-        for res_id, res_type in selected_items:
-            type_key = res_type.value
-            if type_key in list_data["resources"]:
-                list_data["resources"][type_key].append(res_id)
-
-        # Ask user for save location
-        from tkinter import filedialog
-        default_name = f"install_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.hflist"
-        file_path = filedialog.asksaveasfilename(
-            parent=self.root,
-            title="保存安装清单",
-            defaultextension=".hflist",
-            initialfile=default_name,
-            filetypes=[("安装清单文件", "*.hflist"), ("所有文件", "*.*")]
-        )
-
-        if file_path:
-            save_json(file_path, list_data)
-            logger.success(f"安装清单已保存: {file_path}")
+        from core.manifest import export_manifest
+        from utils.helpers import atomic_json
+        if not self.installer:
+            messagebox.showwarning("生成清单", "请先选择已安装整合包的客户端目录。", parent=self.root)
+            return
+        try:
+            data = export_manifest(self.installer)
+            entries = [entry for items in data['resources'].values() for entry in items]
+            if not entries and not data.get('client'):
+                raise ValueError("当前客户端没有本工具记录的安装内容。")
+            path = filedialog.asksaveasfilename(parent=self.root, title="保存整合包安装清单",
+                defaultextension='.hflist', initialfile=f"GTNH_{datetime.now():%Y%m%d_%H%M%S}.hflist",
+                filetypes=[("安装清单", "*.hflist")])
+            if not path:
+                return
+            atomic_json(path, data)
+            local = sum(not entry.get('download') for entry in entries)
+            note = f"已保存 {len(entries)} 项已安装资源。"
+            if data.get('client'):
+                note += "\n已包含客户端固定下载链接，拖入清单可安装到空目录。"
+            else:
+                note += "\n未记录客户端来源，接收方需先准备对应版本的客户端。"
+            if local:
+                note += f"\n其中 {local} 项没有可用下载来源，接收方须具备相同的本地资源。"
+            messagebox.showinfo("清单已生成", note, parent=self.root)
+        except Exception as exc:
+            messagebox.showerror("生成清单失败", str(exc), parent=self.root)
 
     def _load_install_list(self, file_path: str):
-        """Load installation list from .hflist file and apply"""
-        if not self.installer:
-            messagebox.showwarning("警告", "请先选择客户端 .minecraft 文件夹")
+        from core.manifest import read_manifest, ManifestInstaller
+        from gui.manifest import ManifestProgressDialog
+        if self._manifest_busy:
             return
-
-        list_data = load_json(file_path)
-        if not list_data:
-            messagebox.showerror("错误", "无法读取安装清单文件")
-            return
-
-        # Check version compatibility
-        list_version = list_data.get("gtnh_version", "")
-        current_version = self.version_var.get()
-
-        if list_version and list_version != current_version:
-            if not messagebox.askyesno("版本不匹配",
-                f"清单版本: {list_version}\n当前版本: {current_version}\n\n是否继续安装？"):
+        self._manifest_busy = True
+        service = None
+        try:
+            data = read_manifest(file_path)
+            if data.get('client'):
+                target = filedialog.askdirectory(parent=self.root, title="选择空目录安装清单中的完整客户端")
+                server = None
+            else:
+                if not self.installer:
+                    target = filedialog.askdirectory(parent=self.root, title="选择现有客户端 .minecraft 目录")
+                else:
+                    target = self.installer.mc_path.mc_path
+                server = self.server_path_var.get().strip() or None
+            if not target:
                 return
+            version = data['gtnh_version']
+            library = os.path.join(init_external_content(), version)
+            service = ManifestInstaller()
+            dialog = ManifestProgressDialog(self.root, lambda cancel, report: service.install(
+                data, target, library, cancel, report, server))
+            self.root.wait_window(dialog)
+            if dialog.error:
+                messagebox.showerror("清单安装未完成", dialog.error + "\n完整客户端失败时不会发布暂存目录；已有客户端可能保留此前成功安装的资源。", parent=self.root)
+            if dialog.result:
+                self._adopt_downloaded_client(dialog.result, version)
+                messagebox.showinfo("安装完成", "清单中的客户端与资源已安装。完整实例请通过对应启动器添加，并在游戏内启用资源包。", parent=self.root)
+            elif self.installer:
+                self.installer.refresh_installed_cache()
+                self._load_all_resources()
+        except Exception as exc:
+            messagebox.showerror("清单安装失败", str(exc), parent=self.root)
+        finally:
+            if service:
+                service.client.session.close()
+            self._manifest_busy = False
 
-        # Collect resources to install
-        all_selected = []
-        resources = list_data.get("resources", {})
-
-        for type_key, res_ids in resources.items():
-            try:
-                res_type = ResourceType(type_key)
-                for res_id in res_ids:
-                    all_selected.append((res_id, res_type))
-            except ValueError:
-                continue
-
-        if not all_selected:
-            messagebox.showwarning("警告", "清单中没有可安装的资源")
-            return
-
-        # Show progress dialog
-        progress = ProgressDialog(self.root, "安装中", "正在从清单安装资源...")
-        progress.show()
-
-        def update_progress(current, total, name):
-            progress.update((current / total) * 100, f"正在安装: {name}")
-            self.root.update()
-
-        success_count, errors = self.installer.install_multiple(all_selected, update_progress)
-
-        progress.close()
-
-        if errors:
-            messagebox.showwarning("完成", f"安装完成，成功: {success_count}，失败: {len(errors)}")
-        else:
-            messagebox.showinfo("成功", f"成功安装 {success_count} 个资源")
-
-        # Refresh lists
-        self._load_all_resources()
+    def _adopt_downloaded_client(self, path, version):
+        os.makedirs(os.path.join(init_external_content(), version), exist_ok=True)
+        self.version_var.set(version)
+        self._set_client_path(path)
+        self.version_var.set(version)
+        self._on_version_changed(None)
+        self._save_config()
 
     def _on_drop(self, event):
         """Handle file drop event"""
@@ -869,7 +813,7 @@ class MainWindow:
         if isinstance(files, str):
             # Parse dropped files (may be space or newline separated)
             # On Windows, paths may be enclosed in curly braces if they contain spaces
-            files = files.replace('{', '').replace('}', '').split()
+            files = self.root.tk.splitlist(files)
 
         for file_path in files:
             file_path = file_path.strip()
@@ -891,17 +835,20 @@ class MainWindow:
         if not messagebox.askyesno("确认", f"确定要卸载 {len(selected)} 个资源吗？"):
             return
 
-        # Try to uninstall as each type
         success_count = 0
-        resource_types = [res_type for _attr, _label, res_type in self.RESOURCE_TABS if res_type]
+        errors = []
         for res_id in selected:
-            for res_type in resource_types:
-                success, _ = self.installer.uninstall_resource(res_id, res_type)
-                if success:
-                    success_count += 1
-                    break
+            item = self.installed_list.resource_items[res_id]
+            success, message = self.installer.uninstall_resource(res_id, ResourceType(item['type']))
+            if success:
+                success_count += 1
+            else:
+                errors.append(message)
 
-        messagebox.showinfo("完成", f"成功卸载 {success_count} 个资源")
+        if errors:
+            messagebox.showwarning("卸载未全部完成", f"成功: {success_count}，失败: {len(errors)}\n" + "\n".join(errors))
+        else:
+            messagebox.showinfo("完成", f"成功卸载 {success_count} 个资源")
 
         # Refresh lists
         self._load_all_resources()
@@ -994,16 +941,18 @@ class MainWindow:
             if file_path.lower().endswith('.zip'):
                 # Handle ZIP files
                 with zipfile.ZipFile(file_path, 'r') as zf:
+                    # Validate the entire archive before writing its first file.
+                    for member in zf.namelist():
+                        safe_child_path(client_path, member)
                     for member in zf.namelist():
                         # Skip directories
                         if member.endswith('/'):
                             continue
                         # Extract file
-                        source = zf.open(member)
-                        target_path = os.path.join(client_path, member)
+                        target_path = safe_child_path(client_path, member)
                         # Ensure directory exists
                         os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                        with open(target_path, 'wb') as target:
+                        with zf.open(member) as source, open(target_path, 'wb') as target:
                             target.write(source.read())
                         extracted_count += 1
                         logger.info(f"已解压: {member}")
@@ -1060,7 +1009,6 @@ class MainWindow:
         """Setup drag and drop support for .hflist files"""
         # Bind keyboard shortcut for paste (fallback method)
         self.root.bind('<Control-v>', self._on_paste_hflist)
-        self.root.bind('<FocusIn>', self._on_focus_in)
 
         # Setup drag and drop if tkinterdnd2 is available
         if HAS_DND:
@@ -1076,15 +1024,50 @@ class MainWindow:
         except tk.TclError:
             pass
 
-    def _on_focus_in(self, _event):
-        """Check clipboard for .hflist file path when window gets focus"""
-        try:
-            clipboard = self.root.clipboard_get()
-            if clipboard.lower().endswith('.hflist') and os.path.exists(clipboard):
-                self._load_install_list(clipboard)
-                self.root.clipboard_clear()
-        except:
-            pass
+    def _create_download_menu(self, parent):
+        menu = tk.Menu(parent, tearoff=0)
+        menu.add_command(label="模组下载", command=self._show_online_mods)
+        menu.add_command(label="客户端下载", command=lambda: self._show_downloads(True))
+        menu.add_command(label="资源包下载", command=lambda: self._show_downloads(False))
+        return menu
+
+    def _show_downloads(self, game):
+        version = self.version_var.get()
+        content_dir = init_external_content()
+        if not game and (not version or version not in os.listdir(content_dir)):
+            messagebox.showwarning("请选择版本", "请先选择资源包保存的 GTNH 资源版本。")
+            return
+        dialog = DownloadsDialog(self.root, game, os.path.join(content_dir, version))
+        self.root.wait_window(dialog)
+        if dialog.installed_client:
+            import re
+            from core.manifest import CLIENT_RECEIPT
+            receipt = load_json(os.path.join(dialog.installed_client, CLIENT_RECEIPT)) or {}
+            match = re.search(r'_(\d+)\.(\d+)\.', receipt.get('name', ''))
+            installed_version = f"{match[1]}.{match[2]}.X" if match else version
+            self._adopt_downloaded_client(dialog.installed_client, installed_version)
+            if self.generate_list_var.get():
+                self._save_install_list()
+
+        if dialog.changed:
+            ResourceEditorDialog._invalidate_resources_cache(version)
+            if self.installer:
+                self._load_all_resources()
+
+    def _show_online_mods(self):
+        version = self.version_var.get()
+        content_dir = init_external_content()
+        if not version or version not in os.listdir(content_dir):
+            messagebox.showwarning("请选择版本", "请先选择要保存下载资源的 GTNH 资源版本。")
+            return
+        dialog = OnlineModsDialog(
+            self.root, os.path.join(content_dir, version),
+            os.path.join(get_app_dir(), "wiki-mod-index.json"))
+        self.root.wait_window(dialog)
+        if dialog.changed:
+            ResourceEditorDialog._invalidate_resources_cache(version)
+            if self.installer:
+                self._load_all_resources()
 
     def _open_wiki(self):
         """Open GTNH Chinese wiki page in browser"""
